@@ -1,0 +1,90 @@
+flowchart TD
+    subgraph ESP32[ESP32-DevKitC]
+        IO2[IO2]
+        IO4[IO4]
+        IO5[IO5]
+        IO12[IO12]
+        IO13[IO13]
+        IO14[IO14]
+        IO15[IO15]
+        IO18[IO18]
+        IO19[IO19]
+        IO21[IO21]
+        IO22[IO22]
+        IO23[IO23]
+        GND1[GND]
+        GND2[GND]
+        V5[5V]
+        V3[3.3V]
+    end
+
+    subgraph LCD["TFT液晶 - ILI9341"]
+        LCD_MOSI[MOSI or DIN]
+        LCD_CLK[SCLK]
+        LCD_CS[CS]
+        LCD_DC[DC]
+        LCD_RST[RST]
+        LCD_VCC[VCC]
+        LCD_GND[GND]
+    end
+
+    subgraph SD["microSDカードスロット"]
+        SD_MOSI[MOSI]
+        SD_MISO[MISO]
+        SD_CLK[SCK]
+        SD_CS[CS]
+        SD_VCC[VCC]
+        SD_GND[GND]
+    end
+
+    subgraph TEMP["温度センサ - DS18B20"]
+        TEMP_DATA[DATA]
+        TEMP_VCC[VDD]
+        TEMP_GND[GND]
+        TEMP_PULLUP[4.7kΩ Pull-up Resistor]
+    end
+
+    subgraph AMP["PAM8403アンプ"]
+        AMP_INL[INL]
+        AMP_INR[INR]
+        AMP_VCC[VCC]
+        AMP_GND[GND]
+    end
+
+    subgraph SPK["スピーカー"]
+        SPK_L[SPK_L]
+        SPK_R[SPK_R]
+    end
+
+    %% LCD接続
+    IO23 --> LCD_MOSI
+    IO18 --> LCD_CLK
+    IO5  --> LCD_CS
+    IO21 --> LCD_DC
+    IO22 --> LCD_RST
+    V3   --> LCD_VCC
+    GND1 --> LCD_GND
+
+    %% SDカード接続
+    IO23 --> SD_MOSI
+    IO19 --> SD_MISO
+    IO18 --> SD_CLK
+    IO4  --> SD_CS
+    V3   --> SD_VCC
+    GND1 --> SD_GND
+
+    %% 温度センサ接続
+    IO2  --> TEMP_DATA
+    V3   --> TEMP_VCC
+    GND1 --> TEMP_GND
+    TEMP_DATA -- Pull-up --> TEMP_PULLUP
+    TEMP_PULLUP --> V3
+
+    %% アンプとスピーカー接続
+    IO12 --> AMP_INL
+    IO13 --> AMP_INR
+    V5   --> AMP_VCC
+    GND2 --> AMP_GND
+
+    AMP_INL --> SPK_L
+    AMP_INR --> SPK_R

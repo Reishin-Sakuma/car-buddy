@@ -1,0 +1,18 @@
+graph TD
+    subgraph ESP32-DevKitC-VE
+        MCU(ESP32)
+    end
+
+    subgraph 周辺機器
+        TFT[TFT液晶 ILI9341（2.8インチ タッチパネル付）]
+        Temp[温度センサー DS18B20]
+        SD[microSDスロット（液晶内蔵 or 外部）]
+        Amp[アンプモジュール（PAM8403）]
+        Speaker[スピーカー 8Ω 0.5W]
+    end
+
+    MCU -->|SPI接続| TFT
+    MCU -->|1-Wire（4.7kΩプルアップ）| Temp
+    MCU -->|SPI接続| SD
+    MCU -->|GPIO出力| Amp
+    Amp --> Speaker

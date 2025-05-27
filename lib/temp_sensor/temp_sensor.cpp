@@ -1,8 +1,10 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include "temp_sensor.h"
-#define TEMP_SENSOR_PIN 4
-OneWire oneWire(TEMP_SENSOR_PIN);
+#include "temp_sensor.hpp"
+
+#define ONE_WIRE_BUS 4
+
+OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
 void initTempSensor() {

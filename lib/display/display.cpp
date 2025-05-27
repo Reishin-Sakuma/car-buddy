@@ -1,20 +1,18 @@
 #include <TFT_eSPI.h>
-#include "display.h"
+#include "display.hpp"
+
 TFT_eSPI tft = TFT_eSPI();
 
 void initDisplay() {
   tft.init();
-  tft.setRotation(1);
+  tft.setRotation(1); // 横表示
   tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(2);
 }
 
-void showBootMessage() {
-  tft.drawString("起動中...", 10, 10);
-}
-
-void showTemperature(float temp) {
-  tft.fillRect(10, 60, 200, 30, TFT_BLACK);
-  tft.setTextColor(TFT_YELLOW);
-  tft.drawString("温度: " + String(temp, 1) + " C", 10, 60);
+void displayTemperature(float tempC) {
+  tft.fillRect(0, 0, 240, 40, TFT_BLACK);
+  tft.setCursor(10, 10);
+  tft.printf("Temp: %.1f C", tempC);
 }

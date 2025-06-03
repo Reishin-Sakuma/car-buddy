@@ -1,6 +1,6 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include "temp_sensor.hpp"
+#include "temp_sensor.h"
 
 #define ONE_WIRE_BUS 4
 

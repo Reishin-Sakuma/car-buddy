@@ -1,29 +1,32 @@
-// #include <Arduino.h>
-// #include <display.h>
-
-// void setup() {
-//   initDisplay();
-// }
-
-// void loop() {
-//   float temp = 36.2;  // 仮温度
-//   int speed = 42;     // 仮速度
-
-//   drawTemperature(temp);
-//   drawSpeed(speed);
-
-//   delay(2000);  // 2秒ごとに更新
-// }
-
 #include <Arduino.h>
+#include <TFT_eSPI.h>
+
+// TFT_eSPI設定用のピン定義をカスタマイズ
+// #define TFT_CS   5
+// #define TFT_RST  4
+// #define TFT_DC   2
+
+TFT_eSPI tft = TFT_eSPI();  // TFTインスタンス生成
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
-  Serial.println("ESP32 起動完了！ようこそ『しゃべるモニター』へ！");
+  delay(100);
+
+  // TFT設定（CS, DC, RSTはTFT_eSPIのUser_Setupファイルで設定も可）
+  // もしUser_Setupで設定してなければ、ここでピンを再設定する必要あり
+  // ただしTFT_eSPIはUser_Setupファイルを使うのが基本なので要注意
+
+  tft.init();
+  tft.setRotation(1); // 横向き表示
+  tft.fillScreen(TFT_BLACK);
+
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.drawString("Hello, car-buddy!", 10, 20);
+
+  Serial.println("TFT表示テスト開始");
 }
 
 void loop() {
-  Serial.println("動作中…");
-  delay(1000);
+  // 特にループ処理なし。静止画表示だけ
 }

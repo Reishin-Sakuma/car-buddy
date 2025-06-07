@@ -1,8 +1,6 @@
 .vscode/
 .pio/
 driver/
-<<<<<<< HEAD
 fritzing/
-=======
 forzip/
->>>>>>> ee54c599a5e8fc609f30c7bc0f3503807334e1fa
+lcd-image-converter/

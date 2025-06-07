@@ -1,30 +1,29 @@
 #include <Arduino.h>
-#include <TFT_eSPI.h>
-#include "ui.hpp"
-#include "temperature.hpp"
+#include <Wire.h>
 
-TFT_eSPI tft = TFT_eSPI();
+#define MPU_ADDR 0x68
 
 void setup() {
-    tft.init();
-    tft.setRotation(1);
-    drawUI(60.0);
-    // キャラクター画像の描画（例として座標(10, 20)に描画）
-    drawCharacterImage(10, 20);
-    Serial.begin(115200);
-    
-    Serial.println("initTemperatureSensor: start");
-    initTemperatureSensor();
-    Serial.println("initTemperatureSensor: done");
-
-    Serial.print("Temp = ");
-    float temp = getTemperature();
-    Serial.println(temp);
+  Serial.begin(115200);
+  Wire.begin();
 }
 
 void loop() {
-  //   // 必要に応じてUI更新
-  float temp = getTemperature();
-  drawTemperature(temp);
-  delay(1000); // 1秒に1回更新
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x3B);  // 加速度計のX軸データ開始アドレス
+  Wire.endTransmission(false);
+
+  Wire.requestFrom((uint8_t)MPU_ADDR, (size_t)6, true);
+
+  if (Wire.available() >= 6) {
+    int16_t accX = (Wire.read() << 8) | Wire.read();
+    int16_t accY = (Wire.read() << 8) | Wire.read();
+    int16_t accZ = (Wire.read() << 8) | Wire.read();
+
+    Serial.print("AccX: "); Serial.print(accX);
+    Serial.print(" AccY: "); Serial.print(accY);
+    Serial.print(" AccZ: "); Serial.println(accZ);
+  }
+
+  delay(500);
 }

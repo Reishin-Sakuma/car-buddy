@@ -2,17 +2,26 @@
 #include <DallasTemperature.h>
 #include "temperature.hpp"
 
-// 接続しているGPIOピンに合わせて変更
-#define ONE_WIRE_BUS 4
+#define ONE_WIRE_BUS 21
 
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature sensors(&oneWire);
+// 静的にスコープ内に持ち、setup後に初期化
+static OneWire* oneWire = nullptr;
+static DallasTemperature* sensors = nullptr;
 
 void initTemperatureSensor() {
-  sensors.begin();
+  oneWire = new OneWire(ONE_WIRE_BUS);
+  sensors = new DallasTemperature(oneWire);
+  sensors->begin();
 }
 
 float readTemperatureC() {
-  sensors.requestTemperatures();
-  return sensors.getTempCByIndex(0);
+  if (sensors) {
+    sensors->requestTemperatures();
+    return sensors->getTempCByIndex(0);
+  }
+  return NAN;
+}
+
+float getTemperature() {
+  return readTemperatureC();
 }

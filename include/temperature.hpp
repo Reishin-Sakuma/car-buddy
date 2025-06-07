@@ -3,5 +3,7 @@
 
 void initTemperatureSensor();
 float readTemperatureC();
+float getTemperature();
+
 
 #endif

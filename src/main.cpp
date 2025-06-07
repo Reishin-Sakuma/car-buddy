@@ -8,19 +8,23 @@ TFT_eSPI tft = TFT_eSPI();
 void setup() {
     tft.init();
     tft.setRotation(1);
-    drawUI(25.5, 60.0);
+    drawUI(60.0);
     // キャラクター画像の描画（例として座標(10, 20)に描画）
     drawCharacterImage(10, 20);
     Serial.begin(115200);
+    
+    Serial.println("initTemperatureSensor: start");
     initTemperatureSensor();
+    Serial.println("initTemperatureSensor: done");
+
+    Serial.print("Temp = ");
+    float temp = getTemperature();
+    Serial.println(temp);
 }
 
 void loop() {
-    // 必要に応じてUI更新
-  float temp = readTemperatureC();
-  Serial.print("Temp: ");
-  Serial.print(temp);
-  Serial.println(" °C");
-
-  delay(1000);
+  //   // 必要に応じてUI更新
+  float temp = getTemperature();
+  drawTemperature(temp);
+  delay(1000); // 1秒に1回更新
 }

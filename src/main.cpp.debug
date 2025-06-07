@@ -1,0 +1,28 @@
+#include <OneWire.h>
+
+#define ONE_WIRE_BUS 21  // 試したいGPIOピン番号（現在のピンでOK）
+
+OneWire oneWire(ONE_WIRE_BUS);
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  Serial.println("OneWire デバイス検索中...");
+  byte addr[8];
+
+  if (!oneWire.search(addr)) {
+    Serial.println("❌ センサが見つかりません！");
+    oneWire.reset_search();
+    return;
+  }
+
+  Serial.print("✅ デバイス見つかりました: ");
+  for (int i = 0; i < 8; i++) {
+    Serial.print(addr[i], HEX);
+    Serial.print(" ");
+  }
+  Serial.println();
+}
+
+void loop() {}

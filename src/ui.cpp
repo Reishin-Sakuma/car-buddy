@@ -79,3 +79,66 @@ void drawCharacterImage(int x, int y) {
   
   tft.endWrite();
 }
+
+// フェード付きスプラッシュ画面を表示
+void showSplashScreen() {
+  // 基本設定
+  String title = "car-buddy";
+  String subtitle = "Talking Monitor v1.0";
+  int titleX = (320 - title.length() * 24) / 2;
+  int titleY = (240 - 32) / 2;
+  int subX = (320 - subtitle.length() * 12) / 2;
+  int subY = titleY + 50;
+  
+  // フェードイン（8段階）
+  for (int fade = 0; fade <= 7; fade++) {
+    tft.fillScreen(TFT_BLACK);
+    
+    // グレースケールでフェード効果
+    uint16_t fadeColor = tft.color565(fade * 32, fade * 32, fade * 32);
+    tft.setTextColor(fadeColor, TFT_BLACK);
+    
+    // タイトル描画
+    tft.setTextSize(4);
+    tft.drawString(title, titleX, titleY);
+    
+    // サブタイトル描画
+    tft.setTextSize(2);
+    tft.drawString(subtitle, subX, subY);
+    
+    delay(100);  // フェードイン速度
+  }
+  
+  // 完全表示（白色）
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(4);
+  tft.drawString(title, titleX, titleY);
+  tft.setTextSize(2);
+  tft.drawString(subtitle, subX, subY);
+  
+  delay(1000);  // 完全表示時間
+  
+  // フェードアウト（8段階）
+  for (int fade = 7; fade >= 0; fade--) {
+    tft.fillScreen(TFT_BLACK);
+    
+    // グレースケールでフェード効果
+    uint16_t fadeColor = tft.color565(fade * 32, fade * 32, fade * 32);
+    tft.setTextColor(fadeColor, TFT_BLACK);
+    
+    // タイトル描画
+    tft.setTextSize(4);
+    tft.drawString(title, titleX, titleY);
+    
+    // サブタイトル描画
+    tft.setTextSize(2);
+    tft.drawString(subtitle, subX, subY);
+    
+    delay(100);  // フェードアウト速度
+  }
+  
+  // 最終的に黒画面
+  tft.fillScreen(TFT_BLACK);
+  delay(200);
+}

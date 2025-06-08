@@ -28,6 +28,9 @@ void setup() {
     Serial.println(tft.height());
     Serial.println("TFT initialized");
 
+    // スプラッシュ画面表示
+    showSplashScreen();
+
     // UI初期描画
     drawUI();
     drawCharacterImage(10, 30);  // 縦方向中央配置（(240-180)/2 = 30）

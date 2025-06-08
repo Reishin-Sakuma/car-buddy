@@ -31,9 +31,9 @@ void setup() {
     // スプラッシュ画面表示
     showSplashScreen();
 
-    // UI初期描画
+    // UI初期描画（フェードイン）
     drawUI();
-    drawCharacterImage(10, 30);  // 縦方向中央配置（(240-180)/2 = 30）
+    drawCharacterImageWithFade(10, 30);  // キャラクターもフェードイン
     Serial.println("UI initialized");
 
     // 温度センサー初期化

@@ -200,3 +200,113 @@ void drawCharacterImage(int x, int y) {
   
   tft.endWrite();
 }
+
+// キャラクター画像を縁フェード付きで表示（弱めの四角フェード）
+void drawCharacterImageWithEdgeFade(int x, int y) {
+  const int originalSize = 160;
+  const int newSize = 180;
+  const float scale = (float)newSize / originalSize;
+  const int fadeWidth = 8;  // フェード幅を小さく（弱め）
+  
+  tft.startWrite();
+  tft.setAddrWindow(x, y, newSize, newSize);
+  
+  for (int row = 0; row < newSize; row++) {
+    for (int col = 0; col < newSize; col++) {
+      int srcRow = (int)(row / scale);
+      int srcCol = (int)(col / scale);
+      
+      if (srcRow >= originalSize) srcRow = originalSize - 1;
+      if (srcCol >= originalSize) srcCol = originalSize - 1;
+      
+      int srcIndex = srcRow * originalSize + srcCol;
+      uint16_t originalColor = pgm_read_word(&characterImage[srcIndex]);
+      
+      // 四角い縁からの距離を計算
+      int distFromEdge = min(min(row, col), min(newSize - 1 - row, newSize - 1 - col));
+      
+      if (distFromEdge < fadeWidth) {
+        // フェード領域：背景色と軽くブレンド
+        float alpha = 0.3 + 0.7 * ((float)distFromEdge / fadeWidth);  // 0.3-1.0の範囲（弱め）
+        
+        // 元の色を分解
+        uint8_t r = (originalColor >> 11) & 0x1F;
+        uint8_t g = (originalColor >> 5) & 0x3F;
+        uint8_t b = originalColor & 0x1F;
+        
+        // 背景色（青）を分解
+        uint8_t bgR = 0;
+        uint8_t bgG = 0;
+        uint8_t bgB = 31;  // 青の最大値
+        
+        // 軽いアルファブレンド
+        uint8_t blendR = (uint8_t)(r * alpha + bgR * (1.0 - alpha));
+        uint8_t blendG = (uint8_t)(g * alpha + bgG * (1.0 - alpha));
+        uint8_t blendB = (uint8_t)(b * alpha + bgB * (1.0 - alpha));
+        
+        uint16_t fadeColor = (blendR << 11) | (blendG << 5) | blendB;
+        tft.pushColor(fadeColor);
+      } else {
+        // 通常領域：元の色をそのまま
+        tft.pushColor(originalColor);
+      }
+    }
+  }
+  
+  tft.endWrite();
+}
+
+// より高品質な縁フェード（ガウシアンブラー風）
+void drawCharacterImageWithSoftEdge(int x, int y) {
+  const int originalSize = 160;
+  const int newSize = 180;
+  const float scale = (float)newSize / originalSize;
+  const int fadeWidth = 20;  // フェード幅
+  
+  tft.startWrite();
+  tft.setAddrWindow(x, y, newSize, newSize);
+  
+  for (int row = 0; row < newSize; row++) {
+    for (int col = 0; col < newSize; col++) {
+      int srcRow = (int)(row / scale);
+      int srcCol = (int)(col / scale);
+      
+      if (srcRow >= originalSize) srcRow = originalSize - 1;
+      if (srcCol >= originalSize) srcCol = originalSize - 1;
+      
+      int srcIndex = srcRow * originalSize + srcCol;
+      uint16_t originalColor = pgm_read_word(&characterImage[srcIndex]);
+      
+      // 中心からの距離でソフトな円形フェード
+      float centerX = newSize / 2.0;
+      float centerY = newSize / 2.0;
+      float distFromCenter = sqrt((row - centerY) * (row - centerY) + (col - centerX) * (col - centerX));
+      float maxRadius = newSize / 2.0;
+      float fadeRadius = maxRadius - fadeWidth;
+      
+      if (distFromCenter > fadeRadius) {
+        // フェード領域：円形グラデーション
+        float alpha = 1.0 - (distFromCenter - fadeRadius) / fadeWidth;
+        if (alpha < 0) alpha = 0;
+        
+        // 元の色を分解
+        uint8_t r = (originalColor >> 11) & 0x1F;
+        uint8_t g = (originalColor >> 5) & 0x3F;
+        uint8_t b = originalColor & 0x1F;
+        
+        // 背景色（青）とブレンド
+        uint8_t blendR = (uint8_t)(r * alpha);
+        uint8_t blendG = (uint8_t)(g * alpha);
+        uint8_t blendB = (uint8_t)(b * alpha + 31 * (1.0 - alpha));
+        
+        uint16_t fadeColor = (blendR << 11) | (blendG << 5) | blendB;
+        tft.pushColor(fadeColor);
+      } else {
+        // 通常領域
+        tft.pushColor(originalColor);
+      }
+    }
+  }
+  
+  tft.endWrite();
+}

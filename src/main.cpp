@@ -33,7 +33,7 @@ void setup() {
 
     // UI初期描画（フェードイン）
     drawUI();
-    drawCharacterImageWithFade(10, 30);  // キャラクターもフェードイン
+    drawCharacterImageWithEdgeFade(10, 30);  // 弱めの四角い縁フェード
     Serial.println("UI initialized");
 
     // 温度センサー初期化

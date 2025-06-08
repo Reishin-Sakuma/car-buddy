@@ -2,7 +2,7 @@
 #include <DallasTemperature.h>
 #include "temperature.hpp"
 
-#define ONE_WIRE_BUS 21
+#define ONE_WIRE_BUS 25
 
 // 静的にスコープ内に持ち、setup後に初期化
 static OneWire* oneWire = nullptr;

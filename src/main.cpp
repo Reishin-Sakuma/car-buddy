@@ -22,11 +22,15 @@ void setup() {
     // TFT初期化
     tft.init();
     tft.setRotation(1);
+    Serial.print("TFT size: ");
+    Serial.print(tft.width());
+    Serial.print(" x ");
+    Serial.println(tft.height());
     Serial.println("TFT initialized");
 
     // UI初期描画
     drawUI();
-    drawCharacterImage(10, 20);
+    drawCharacterImage(10, 30);  // 縦方向中央配置（(240-180)/2 = 30）
     Serial.println("UI initialized");
 
     // 温度センサー初期化

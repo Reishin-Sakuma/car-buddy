@@ -16,10 +16,10 @@ void drawUI() {
     tft.setTextColor(TFT_WHITE, TFT_BLUE);
     tft.setTextSize(3);
     
-    // 固定ラベルを一度だけ描画
+    // 固定ラベルを一度だけ描画（右端から余裕を持たせて配置）
     tft.drawString("Temp:", 200, 10);
     tft.drawString("Speed:", 200, 130);
-    tft.drawString("km/h", 260, 180);
+    tft.drawString("km/h", 240, 180);  // X座標を240に調整（20ピクセル左へ）
     
     uiInitialized = true;
   }
@@ -49,12 +49,33 @@ void drawSpeed(float speed) {
   }
 }
 
+// キャラクター画像を大幅拡大表示（320x240画面用）
 void drawCharacterImage(int x, int y) {
+  // 320x240画面でテキストエリア（X=200）ギリギリまで使用
+  const int originalSize = 160;
+  const int newSize = 180;  // テキストまで10ピクセル余白
+  const float scale = (float)newSize / originalSize;
+  
   tft.startWrite();
-  tft.setAddrWindow(x, y, 160, 160);
-  for (int i = 0; i < 160 * 160; i++) {
-    uint16_t color = pgm_read_word(&characterImage[i]);
-    tft.pushColor(color);
+  tft.setAddrWindow(x, y, newSize, newSize);
+  
+  for (int row = 0; row < newSize; row++) {
+    for (int col = 0; col < newSize; col++) {
+      // 拡大時の元画像座標を計算
+      int srcRow = (int)(row / scale);
+      int srcCol = (int)(col / scale);
+      
+      // 境界チェック
+      if (srcRow >= originalSize) srcRow = originalSize - 1;
+      if (srcCol >= originalSize) srcCol = originalSize - 1;
+      
+      // 元画像のピクセルデータを取得
+      int srcIndex = srcRow * originalSize + srcCol;
+      uint16_t color = pgm_read_word(&characterImage[srcIndex]);
+      
+      tft.pushColor(color);
+    }
   }
+  
   tft.endWrite();
 }

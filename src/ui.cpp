@@ -5,20 +5,19 @@
 
 extern TFT_eSPI tft;  // main.cppで定義されたインスタンスを使う想定
 
-void drawUI(float speed) {
+void drawUI() {
   tft.fillScreen(TFT_BLUE);
 
   // フォント設定
   tft.setTextColor(TFT_WHITE, TFT_BLUE);
   tft.setTextSize(3);
+}
 
+void drawSpeed(float speed) {
   // 速度表示（右下）
   tft.drawString("Speed: " , 200, 130);
   tft.drawString(String(speed, 1), 200, 155);
   tft.drawString(" km/h" , 200, 180);
-
-  // キャラ画像枠（仮）
-  tft.drawRect(10, 20, 160, 160, TFT_WHITE);
 }
 
 void drawTemperature(float temp) {

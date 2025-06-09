@@ -15,7 +15,53 @@ unsigned long lastTempUpdate = 0;
 unsigned long lastSpeedUpdate = 0;
 unsigned long lastSerialUpdate = 0;
 
+void robustTFTInit() {
+    Serial.println("Initializing TFT...");
+    
+    // 複数回初期化を試行
+    for (int attempts = 0; attempts < 3; attempts++) {
+        Serial.print("TFT init attempt: ");
+        Serial.println(attempts + 1);
+        
+        tft.init();
+        delay(100);
+        
+        tft.setRotation(1);
+        delay(100);
+        
+        // テスト描画で動作確認
+        tft.fillScreen(TFT_RED);
+        delay(200);
+        tft.fillScreen(TFT_GREEN);
+        delay(200);
+        tft.fillScreen(TFT_BLUE);
+        delay(200);
+        
+        // 画面サイズ確認
+        Serial.print("TFT size: ");
+        Serial.print(tft.width());
+        Serial.print(" x ");
+        Serial.println(tft.height());
+        
+        if (tft.width() == 320 && tft.height() == 240) {
+            Serial.println("TFT initialization successful!");
+            return;
+        }
+        
+        Serial.println("TFT initialization failed, retrying...");
+        delay(500);
+    }
+    
+    Serial.println("TFT initialization failed after 3 attempts!");
+    // フォールバック：シリアルのみモード
+    while(true) {
+        Serial.println("TFT ERROR - Check connections");
+        delay(5000);
+    }
+}
+
 void setup() {
+    delay(1000);  // 電源安定化待機
     Serial.begin(115200);
     Serial.println("=== Starting Talking Monitor ===");
 
@@ -27,6 +73,9 @@ void setup() {
     Serial.print(" x ");
     Serial.println(tft.height());
     Serial.println("TFT initialized");
+
+    // 堅牢なTFT初期化
+    robustTFTInit();
 
     // スプラッシュ画面表示
     showSplashScreen();

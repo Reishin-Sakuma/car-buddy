@@ -10,6 +10,9 @@
 TFT_eSPI tft = TFT_eSPI();
 WebServer server(80);
 
+// マルチコア用タスクハンドル
+TaskHandle_t WiFiTask;
+
 // 更新間隔の設定
 const unsigned long TEMP_UPDATE_INTERVAL = 2000;   // 温度: 2秒
 const unsigned long SPEED_UPDATE_INTERVAL = 100;   // 速度: 100ms
@@ -26,10 +29,66 @@ void handleSetTime();
 void handleRoot();
 bool parseAndSetTime(String timeStr);
 
+// WiFi専用タスク（Core 0で実行）
+void WiFiTaskCode(void * pvParameters) {
+    Serial.println("WiFi Task started on Core 0");
+    
+    for(;;) {
+        server.handleClient();
+        
+        // WiFi接続クライアント数を定期チェック
+        static unsigned long lastClientCheck = 0;
+        if (millis() - lastClientCheck > 10000) {  // 10秒ごと
+            int clients = WiFi.softAPgetStationNum();
+            Serial.print("WiFi clients: ");
+            Serial.println(clients);
+            lastClientCheck = millis();
+        }
+        
+        vTaskDelay(1);  // 1ms待機（他タスクにCPU譲る）
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
-    Serial.println("=== Starting Talking Monitor with WiFi Time Sync ===");
+    Serial.println("=== Starting CarBuddy - MultiCore Version ===");
+
+    // WiFi完全初期化（最優先）
+    Serial.println("Initializing WiFi stack...");
+    WiFi.mode(WIFI_OFF);
+    delay(100);
+    WiFi.mode(WIFI_AP_STA);
+    delay(200);
+    
+    // TCP/IPスタック強制初期化
+    WiFi.softAP("CarBuddy-WiFi", "carbuddy123");
+    delay(500);  // AP安定化待機
+    
+    IPAddress IP = WiFi.softAPIP();
+    Serial.print("AP IP address: ");
+    Serial.println(IP);
+
+    // Webサーバー設定
+    server.on("/", handleRoot);
+    server.on("/settime", HTTP_POST, handleSetTime);
+    server.enableCORS(true);
+    server.begin();
+    Serial.println("Web server started");
+    
+    // WiFi専用タスクをCore 0で起動
+    xTaskCreatePinnedToCore(
+        WiFiTaskCode,   // タスク関数
+        "WiFiTask",     // タスク名
+        10000,          // スタックサイズ
+        NULL,           // パラメータ
+        2,              // 優先度（高め）
+        &WiFiTask,      // タスクハンドル
+        0               // Core 0で実行
+    );
+    
+    Serial.println("WiFi task created on Core 0");
+    delay(500);  // WiFiタスク起動待機
 
     // TFT初期化
     tft.init();
@@ -45,25 +104,11 @@ void setup() {
 
     // UI初期描画（フェードイン）
     drawUI();
-    drawCharacterImageWithEdgeFade(10, 30);  // 弱めの四角い縁フェード
+    drawCharacterImageWithEdgeFade(10, 30);
     Serial.println("UI initialized");
 
     // 時刻システム初期化
     initTimeSystem();
-
-    // WiFiアクセスポイント設定
-    Serial.println("Setting up WiFi Access Point...");
-    WiFi.softAP("CarBuddy-WiFi", "carbuddy123");
-    IPAddress IP = WiFi.softAPIP();
-    Serial.print("AP IP address: ");
-    Serial.println(IP);
-
-    // Webサーバー設定
-    server.on("/", handleRoot);
-    server.on("/settime", HTTP_POST, handleSetTime);
-    server.enableCORS(true);
-    server.begin();
-    Serial.println("Web server started for time sync");
 
     // 温度センサー初期化
     Serial.println("Initializing temperature sensor...");
@@ -82,21 +127,16 @@ void setup() {
     drawTime(getCurrentTime());
     drawDate(getCurrentDate());
     
-    Serial.println("=== Setup Complete ===");
+    Serial.println("=== Setup Complete - MultiCore Active ===");
+    Serial.println("Core 0: WiFi processing");
+    Serial.println("Core 1: Display & sensors");
 }
 
 void loop() {
+    // Core 1では表示・センサー処理のみ実行
+    // WiFi処理はCore 0で並行実行中
+    
     unsigned long currentTime = millis();
-    
-    // WiFiサーバー処理
-    server.handleClient();
-    
-    // 温度更新（2秒間隔）
-    if (currentTime - lastTempUpdate >= TEMP_UPDATE_INTERVAL) {
-        float temp = getTemperature();
-        drawTemperature(temp);
-        lastTempUpdate = currentTime;
-    }
     
     // 速度更新（100ms間隔でスムーズに）
     if (currentTime - lastSpeedUpdate >= SPEED_UPDATE_INTERVAL) {
@@ -112,7 +152,7 @@ void loop() {
         lastTimeUpdate = currentTime;
     }
     
-    // シリアル出力（1秒間隔）
+    // シリアル出力（1秒間隔）- 正確なタイミング
     if (currentTime - lastSerialUpdate >= SERIAL_UPDATE_INTERVAL) {
         float temp = getTemperature();
         float speed = getSpeed();
@@ -125,8 +165,15 @@ void loop() {
         lastSerialUpdate = currentTime;
     }
     
-    // CPU負荷軽減のための短いディレイ
-    delay(10);
+    // 温度更新（2秒間隔）
+    if (currentTime - lastTempUpdate >= TEMP_UPDATE_INTERVAL) {
+        float temp = getTemperature();
+        drawTemperature(temp);
+        lastTempUpdate = currentTime;
+    }
+    
+    // 非常に短い待機（Core 1の負荷軽減）
+    delay(1);
 }
 
 // WiFi時刻同期用のハンドラー

@@ -310,3 +310,35 @@ void drawCharacterImageWithSoftEdge(int x, int y) {
   
   tft.endWrite();
 }
+
+// 時刻表示用の静的変数
+static String lastDisplayTime = "";
+static String lastDisplayDate = "";
+
+void drawTime(String currentTime) {
+    // 時刻が変わった時のみ更新
+    if (currentTime != lastDisplayTime) {
+        // 前の値を消去（背景色で上書き）
+        tft.fillRect(10, 220, 80, 20, TFT_BLUE);
+        
+        // 新しい時刻を描画
+        tft.setTextSize(2);
+        tft.setTextColor(TFT_YELLOW, TFT_BLUE);
+        tft.drawString(currentTime, 10, 220);
+        lastDisplayTime = currentTime;
+    }
+}
+
+void drawDate(String currentDate) {
+    // 日付が変わった時のみ更新  
+    if (currentDate != lastDisplayDate) {
+        // 前の値を消去（西暦対応で幅を拡大）
+        tft.fillRect(100, 220, 120, 20, TFT_BLUE);
+        
+        // 新しい日付を描画
+        tft.setTextSize(2);
+        tft.setTextColor(TFT_CYAN, TFT_BLUE);
+        tft.drawString(currentDate, 100, 220);
+        lastDisplayDate = currentDate;
+    }
+}

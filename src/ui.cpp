@@ -113,30 +113,6 @@ void fadeInMainScreen() {
   tft.drawString("km/h", 240, 180);
 }
 
-void drawTemperature(float temp) {
-  // 値が変わった時のみ更新
-  if (abs(temp - lastTemp) > 0.1) {
-    // 前の値を消去（背景色で上書き）
-    tft.fillRect(200, 35, 120, 25, TFT_BLUE);
-    
-    // 新しい値を描画
-    tft.drawString(String(temp, 1) + " C", 200, 35);
-    lastTemp = temp;
-  }
-}
-
-void drawSpeed(float speed) {
-  // 値が変わった時のみ更新
-  if (abs(speed - lastSpeed) > 0.1) {
-    // 前の値を消去
-    tft.fillRect(200, 155, 120, 25, TFT_BLUE);
-    
-    // 新しい値を描画
-    tft.drawString(String(abs(speed), 1), 200, 155);
-    lastSpeed = speed;
-  }
-}
-
 // キャラクター画像をフェードインで表示
 void drawCharacterImageWithFade(int x, int y) {
   const int originalSize = 160;
@@ -309,4 +285,65 @@ void drawCharacterImageWithSoftEdge(int x, int y) {
   }
   
   tft.endWrite();
+}
+
+// 時刻表示用の静的変数
+static String lastDisplayTime = "";
+static String lastDisplayDate = "";
+
+void drawTime(String currentTime) {
+    // 時刻が変わった時のみ更新
+    if (currentTime != lastDisplayTime) {
+        // 前の値を消去（背景色で上書き）
+        tft.fillRect(10, 220, 80, 20, TFT_BLUE);
+        
+        // 新しい時刻を描画
+        tft.setTextSize(2);
+        tft.setTextColor(TFT_YELLOW, TFT_BLUE);
+        tft.drawString(currentTime, 10, 220);
+        lastDisplayTime = currentTime;
+    }
+}
+
+void drawDate(String currentDate) {
+    // 日付が変わった時のみ更新  
+    if (currentDate != lastDisplayDate) {
+        // 前の値を消去（西暦対応で幅を拡大）
+        tft.fillRect(100, 220, 120, 20, TFT_BLUE);
+        
+        // 新しい日付を描画
+        tft.setTextSize(2);
+        tft.setTextColor(TFT_CYAN, TFT_BLUE);
+        tft.drawString(currentDate, 100, 220);
+        lastDisplayDate = currentDate;
+    }
+}
+
+// 既存の温度・速度表示関数の修正版（フォントサイズを明示的に指定）
+void drawTemperature(float temp) {
+  // 値が変わった時のみ更新
+  if (abs(temp - lastTemp) > 0.1) {
+    // 前の値を消去（背景色で上書き）
+    tft.fillRect(200, 35, 120, 25, TFT_BLUE);
+    
+    // フォントサイズを明示的に設定
+    tft.setTextSize(3);
+    tft.setTextColor(TFT_WHITE, TFT_BLUE);
+    tft.drawString(String(temp, 1) + " C", 200, 35);
+    lastTemp = temp;
+  }
+}
+
+void drawSpeed(float speed) {
+  // 値が変わった時のみ更新
+  if (abs(speed - lastSpeed) > 0.1) {
+    // 前の値を消去
+    tft.fillRect(200, 155, 120, 25, TFT_BLUE);
+    
+    // フォントサイズを明示的に設定
+    tft.setTextSize(3);
+    tft.setTextColor(TFT_WHITE, TFT_BLUE);
+    tft.drawString(String(abs(speed), 1), 200, 155);
+    lastSpeed = speed;
+  }
 }

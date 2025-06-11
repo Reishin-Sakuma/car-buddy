@@ -12,5 +12,7 @@ void drawCharacterImageWithFade(int x, int y);     // キャラクターフェ�
 void drawCharacterImageWithEdgeFade(int x, int y); // 縁フェード
 void drawCharacterImageWithSoftEdge(int x, int y); // ソフト縁フェード
 void drawTemperature(float temp);
+void drawTime(String currentTime);         // 時刻表示
+void drawDate(String currentDate);         // 日付表示
 
 #endif

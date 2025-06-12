@@ -184,33 +184,55 @@ void loop() {
             Serial.print("°C → ");
             Serial.println(colorMode);
             
-            // 全画面背景を確実に更新
+            // === 背景とすべての要素を同期描画（ラグ解消） ===
+            
+            // 1. 現在値を事前に取得
+            float currentSpeed = getSpeed();
+            String currentTimeStr = getCurrentTime();
+            String currentDateStr = getCurrentDate();
+            
+            // 2. 全画面背景を更新
             drawTemperatureGradientBackground(currentTemp);
             
-            // UI要素とキャラクターを再描画
+            // 3. すぐに全ての要素を描画（ラグなし）
+            
+            // UI固定ラベル
             tft.setTextColor(TFT_WHITE);
             tft.setTextSize(3);
             tft.drawString("Temp:", 200, 10);
             tft.drawString("Speed:", 200, 130);
             tft.drawString("km/h", 240, 180);
             
-            // キャラクターも温度連動背景に合わせて再描画
+            // 温度表示（文字色判定付き）
+            uint16_t tempTextColor = TFT_WHITE;
+            if (currentTemp >= 32.0) {
+                tempTextColor = TFT_YELLOW;
+            }
+            tft.setTextSize(3);
+            tft.setTextColor(tempTextColor);
+            tft.drawString(String(currentTemp, 1) + " C", 200, 35);
+            
+            // 速度表示
+            tft.setTextSize(3);
+            tft.setTextColor(TFT_WHITE);
+            tft.drawString(String(abs(currentSpeed), 1), 200, 155);
+            
+            // 時刻表示
+            tft.setTextSize(2);
+            tft.setTextColor(TFT_YELLOW);
+            tft.drawString(currentTimeStr, 10, 220);
+            
+            // 日付表示
+            tft.setTextSize(2);
+            tft.setTextColor(TFT_CYAN);
+            tft.drawString(currentDateStr, 100, 220);
+            
+            // キャラクター描画
             drawCharacterImageWithEdgeFade(10, 30);
             
-            // 全ての表示値を強制再描画（背景変更で消えるため）
-            // 強制更新のために前回値をクリア
-            forceUpdateAllDisplayValues();
-            
-            // 現在値を取得して再描画
-            float currentSpeed = getSpeed();
-            String currentTimeStr = getCurrentTime();
-            String currentDateStr = getCurrentDate();
-            
-            // 全ての値を強制再描画
-            drawTemperature(currentTemp);
-            drawSpeed(currentSpeed);
-            drawTime(currentTimeStr);
-            drawDate(currentDateStr);
+            // 4. 前回値を更新（次回の差分描画用）
+            forceUpdateAllDisplayValues();  // 前回値をリセット
+            setLastDisplayValues(currentTemp, currentSpeed, currentTimeStr, currentDateStr); // 新しい値を設定
             
             lastDisplayedBackgroundTemp = currentTemp;
         }

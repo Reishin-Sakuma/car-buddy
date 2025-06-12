@@ -1,6 +1,8 @@
 #include <TFT_eSPI.h>
 #include "ui.hpp"
 #include "characterImage.h"
+#include "speed.hpp"      // getSpeed()関数用
+#include "time.hpp"       // getCurrentTime(), getCurrentDate()関数用
 #include <pgmspace.h>
 
 extern TFT_eSPI tft;
@@ -21,6 +23,14 @@ void forceUpdateAllDisplayValues() {
     lastSpeed = -999.0;
     lastDisplayTime = "";
     lastDisplayDate = "";
+}
+
+// main.cppから前回値を設定するための関数
+void setLastDisplayValues(float temp, float speed, String timeStr, String dateStr) {
+    lastTemp = temp;
+    lastSpeed = speed;
+    lastDisplayTime = timeStr;
+    lastDisplayDate = dateStr;
 }
 
 // テスト用：強制的に青背景を設定（デバッグ用）
@@ -468,42 +478,84 @@ void drawTemperature(float temp) {
         // 背景温度を更新（重要：この処理で背景色が変わる）
         updateBackgroundTemperature(temp);
         
-        // 背景の温度連動グラデーション色を再描画（温度表示エリア + 余裕をもって広めに）
-        drawTemperatureGradientArea(195, 30, 130, 35, temp);
-        
-        // 温度値によって文字色を変更（視認性向上）
-        uint16_t textColor = TFT_WHITE;  // デフォルト：白
-        if (temp >= 32.0) {
-            textColor = TFT_YELLOW;  // 高温：黄色で警告
+        // 小さな変化の場合は部分的な背景再描画
+        if (abs(temp - lastTemp) < 2.0) {
+            // 背景の温度連動グラデーション色を再描画（温度表示エリア + 余裕をもって広めに）
+            drawTemperatureGradientArea(195, 30, 130, 35, temp);
+            
+            // 温度値によって文字色を変更（視認性向上）
+            uint16_t textColor = TFT_WHITE;  // デフォルト：白
+            if (temp >= 32.0) {
+                textColor = TFT_YELLOW;  // 高温：黄色で警告
+            }
+            
+            // フォントサイズを明示的に設定
+            tft.setTextSize(3);
+            tft.setTextColor(textColor);
+            tft.drawString(String(temp, 1) + " C", 200, 35);
         }
         
-        // フォントサイズを明示的に設定
-        tft.setTextSize(3);
-        tft.setTextColor(textColor);
-        tft.drawString(String(temp, 1) + " C", 200, 35);
         lastTemp = temp;
         
         // 重要：温度変化時は常に全画面背景を更新（閾値を下げて確実に更新）
         static float lastBackgroundUpdateTemp = -999.0;  // 初期値を-999に設定
         if (abs(temp - lastBackgroundUpdateTemp) > 0.5) {  // 0.5℃変化で更新
-            Serial.print("Background update triggered: ");
+            Serial.print("Temperature-triggered background update: ");
             Serial.print(lastBackgroundUpdateTemp);
             Serial.print("°C → ");
             Serial.print(temp);
             Serial.println("°C");
             
+            // === 背景とすべての要素を同期描画（ラグ解消） ===
+            
+            // 1. 現在値を取得
+            float currentSpeed = getSpeed();
+            String currentTimeStr = getCurrentTime();
+            String currentDateStr = getCurrentDate();
+            
+            // 2. 背景を更新
             drawTemperatureGradientBackground(temp);
             lastBackgroundUpdateTemp = temp;
             
-            // UI要素を再描画
+            // 3. すべての要素を即座に描画
+            
+            // UI固定ラベル
             tft.setTextColor(TFT_WHITE);
             tft.setTextSize(3);
             tft.drawString("Temp:", 200, 10);
             tft.drawString("Speed:", 200, 130);
             tft.drawString("km/h", 240, 180);
             
-            // キャラクターも再描画
+            // 温度表示（文字色判定付き）
+            uint16_t tempTextColor = TFT_WHITE;
+            if (temp >= 32.0) {
+                tempTextColor = TFT_YELLOW;
+            }
+            tft.setTextSize(3);
+            tft.setTextColor(tempTextColor);
+            tft.drawString(String(temp, 1) + " C", 200, 35);
+            
+            // 速度表示
+            tft.setTextSize(3);
+            tft.setTextColor(TFT_WHITE);
+            tft.drawString(String(abs(currentSpeed), 1), 200, 155);
+            
+            // 時刻表示
+            tft.setTextSize(2);
+            tft.setTextColor(TFT_YELLOW);
+            tft.drawString(currentTimeStr, 10, 220);
+            
+            // 日付表示
+            tft.setTextSize(2);
+            tft.setTextColor(TFT_CYAN);
+            tft.drawString(currentDateStr, 100, 220);
+            
+            // キャラクター描画
             drawCharacterImageWithEdgeFade(10, 30);
+            
+            // 前回値を更新
+            forceUpdateAllDisplayValues();
+            setLastDisplayValues(temp, currentSpeed, currentTimeStr, currentDateStr);
         }
     }
 }

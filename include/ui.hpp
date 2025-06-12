@@ -29,6 +29,7 @@ void drawGradientArea(int x, int y, int width, int height); // エリア再描�
 
 // === 強制更新機能（背景変更時の表示値復旧用） ===
 void forceUpdateAllDisplayValues();        // 全表示値の強制更新
+void setLastDisplayValues(float temp, float speed, String timeStr, String dateStr); // 前回値設定
 void forceBlueBackground();                // 強制青背景設定（テスト用）
 
 #endif

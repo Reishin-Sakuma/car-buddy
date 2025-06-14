@@ -462,10 +462,10 @@ void forceFullRedraw(float temp) {
         tft.setTextColor(TFT_YELLOW);
         tft.drawString(currentTimeStr, 10, 220);
         
-        // 日付表示
+        // 日付表示（位置調整）
         tft.setTextSize(2);
         tft.setTextColor(TFT_CYAN);
-        tft.drawString(currentDateStr, 100, 220);
+        tft.drawString(currentDateStr, 95, 220);  // X座標を100→95に調整
         
         // キャラクター描画（元の位置）
         drawCharacterImageWithEdgeFade(10, 30);  // 元の位置に戻す
@@ -494,8 +494,8 @@ void drawSpeed(float speed) {
 // 時刻表示（温度連動グラデーション背景対応）
 void drawTime(String timeStr) {
     if (timeStr != lastTime) {
-        // 背景の温度連動グラデーション色を再描画（時刻表示エリア）
-        drawTemperatureGradientArea(5, 215, 100, 25, currentBackgroundTemp);
+        // 背景の温度連動グラデーション色を再描画（時刻表示エリア - 幅を調整）
+        drawTemperatureGradientArea(5, 215, 80, 25, currentBackgroundTemp);  // 幅を100→80に短縮
         
         // フォントサイズを明示的に設定
         tft.setTextSize(2);
@@ -508,13 +508,13 @@ void drawTime(String timeStr) {
 // 日付表示（温度連動グラデーション背景対応）
 void drawDate(String dateStr) {
     if (dateStr != lastDate) {
-        // 背景の温度連動グラデーション色を再描画（日付表示エリア）
-        drawTemperatureGradientArea(95, 215, 120, 25, currentBackgroundTemp);
+        // 背景の温度連動グラデーション色を再描画（日付表示エリア - 開始位置を調整）
+        drawTemperatureGradientArea(90, 215, 130, 25, currentBackgroundTemp);  // X座標を95→90に調整
         
         // フォントサイズを明示的に設定
         tft.setTextSize(2);
         tft.setTextColor(TFT_CYAN);
-        tft.drawString(dateStr, 100, 220);
+        tft.drawString(dateStr, 95, 220);  // 表示位置も100→95に調整
         lastDate = dateStr;
     }
 }

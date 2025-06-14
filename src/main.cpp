@@ -164,10 +164,10 @@ void loop() {
             tft.setTextColor(TFT_YELLOW);
             tft.drawString(currentTimeStr, 10, 220);
             
-            // 日付表示
+            // 日付表示（位置調整）
             tft.setTextSize(2);
             tft.setTextColor(TFT_CYAN);
-            tft.drawString(currentDateStr, 100, 220);
+            tft.drawString(currentDateStr, 95, 220);  // X座標を100→95に調整
             
             // キャラクター描画（元の位置に戻す）
             drawCharacterImageWithEdgeFade(10, 30);  // 元の位置に戻す

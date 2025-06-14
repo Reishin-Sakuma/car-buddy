@@ -64,35 +64,26 @@ void stopWebServer() {
     }
 }
 
-// HTTPハンドラー実装
+// HTTPハンドラー実装 - 簡素化版
 void handleRoot() {
     String html = "<!DOCTYPE html>";
-    html += "<html><head><title>CarBuddy Time Sync</title>";
+    html += "<html><head><title>CarBuddy Time</title>";
     html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-    html += "<style>";
-    html += "body { font-family: Arial; margin: 40px; text-align: center; background: #1a1a2e; color: white; }";
-    html += "h1 { color: #16213e; text-shadow: 2px 2px 4px #000; }";
-    html += "button { padding: 15px 30px; font-size: 18px; margin: 10px; background: #0f4c75; color: white; border: none; border-radius: 8px; cursor: pointer; }";
-    html += "button:hover { background: #3282b8; }";
-    html += ".time { font-size: 24px; margin: 20px; background: #16213e; padding: 20px; border-radius: 10px; }";
-    html += ".status { margin: 20px; padding: 10px; border-radius: 5px; }";
-    html += "</style></head><body>";
-    html += "<h1>🚗 CarBuddy Time Sync</h1>";
-    html += "<div class='time' id='currentTime'></div>";
-    html += "<button onclick='syncTime()'>🕐 Sync Time</button>";
-    html += "<div class='status' id='status'></div>";
+    html += "</head><body>";
+    html += "<h1>CarBuddy Time Sync</h1>";
+    html += "<p>Current Time: <span id='time'></span></p>";
+    html += "<button onclick='sync()'>Sync Time</button>";
+    html += "<p id='result'></p>";
     html += "<script>";
+    
+    // 時刻表示用のシンプルなJavaScript
     html += "function updateTime() {";
     html += "const now = new Date();";
-    html += "document.getElementById('currentTime').innerHTML = ";
-    html += "'Current Time: ' + now.getFullYear() + '-' + ";
-    html += "String(now.getMonth() + 1).padStart(2, '0') + '-' + ";
-    html += "String(now.getDate()).padStart(2, '0') + ' ' + ";
-    html += "String(now.getHours()).padStart(2, '0') + ':' + ";
-    html += "String(now.getMinutes()).padStart(2, '0') + ':' + ";
-    html += "String(now.getSeconds()).padStart(2, '0');";
+    html += "document.getElementById('time').textContent = now.toLocaleString();";
     html += "}";
-    html += "function syncTime() {";
+    
+    // 時刻同期用のシンプルなJavaScript
+    html += "function sync() {";
     html += "const now = new Date();";
     html += "const timeStr = now.getFullYear() + '-' + ";
     html += "String(now.getMonth() + 1).padStart(2, '0') + '-' + ";
@@ -100,23 +91,16 @@ void handleRoot() {
     html += "String(now.getHours()).padStart(2, '0') + ':' + ";
     html += "String(now.getMinutes()).padStart(2, '0') + ':' + ";
     html += "String(now.getSeconds()).padStart(2, '0');";
-    html += "document.getElementById('status').innerHTML = '<p style=\"color: yellow;\">Syncing...</p>';";
     html += "fetch('/settime', {";
     html += "method: 'POST',";
     html += "headers: {'Content-Type': 'application/x-www-form-urlencoded'},";
     html += "body: 'time=' + timeStr";
     html += "})";
     html += ".then(response => response.text())";
-    html += ".then(data => {";
-    html += "document.getElementById('status').innerHTML = ";
-    html += "'<p style=\"color: #4caf50;\">✅ ' + data + '</p>';";
-    html += "setTimeout(() => document.getElementById('status').innerHTML = '', 3000);";
-    html += "})";
-    html += ".catch(error => {";
-    html += "document.getElementById('status').innerHTML = ";
-    html += "'<p style=\"color: #f44336;\">❌ Error: ' + error + '</p>';";
-    html += "});";
+    html += ".then(data => document.getElementById('result').textContent = data)";
+    html += ".catch(error => document.getElementById('result').textContent = 'Error: ' + error);";
     html += "}";
+    
     html += "setInterval(updateTime, 1000);";
     html += "updateTime();";
     html += "</script></body></html>";
@@ -127,23 +111,21 @@ void handleRoot() {
 void handleSetTime() {
     if (server.hasArg("time")) {
         String timeStr = server.arg("time");
-        Serial.print("Received time sync request: ");
+        Serial.print("Time sync: ");
         Serial.println(timeStr);
         
         if (parseAndSetTime(timeStr)) {
             // 時刻をEEPROMに保存
             saveCurrentTime();
-            
-            String response = "Time sync complete: " + timeStr;
-            server.send(200, "text/plain", response);
-            Serial.println("Time sync successful");
+            server.send(200, "text/plain", "OK");
+            Serial.println("Time sync OK");
         } else {
-            server.send(400, "text/plain", "Time format error");
+            server.send(400, "text/plain", "Format Error");
             Serial.println("Time format error");
         }
     } else {
-        server.send(400, "text/plain", "No time data received");
-        Serial.println("Empty time sync request");
+        server.send(400, "text/plain", "No Data");
+        Serial.println("No time data");
     }
 }
 
@@ -155,7 +137,6 @@ bool parseAndSetTime(String timeStr) {
                        &year, &month, &day, &hour, &minute, &second);
     
     if (parsed != 6) {
-        Serial.println("Failed to parse time string");
         return false;
     }
     
@@ -169,9 +150,6 @@ bool parseAndSetTime(String timeStr) {
     time_t timestamp = mktime(&timeinfo);
     struct timeval tv = { timestamp, 0 };
     settimeofday(&tv, NULL);
-    
-    Serial.print("Time set successfully to: ");
-    Serial.println(timeStr);
     
     return true;
 }

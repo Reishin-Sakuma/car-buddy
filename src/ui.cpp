@@ -1,80 +1,54 @@
+#include <Arduino.h>
 #include <TFT_eSPI.h>
 #include "ui.hpp"
 #include "characterImage.h"
-#include "speed.hpp"      // getSpeed()関数用
-#include "time.hpp"       // getCurrentTime(), getCurrentDate()関数用
-#include <pgmspace.h>
+#include "../include/temperature.hpp"
+#include "../include/speed.hpp"
+#include "../include/time.hpp"
 
 extern TFT_eSPI tft;
 
-// 前回の値を保存してちらつき防止
-static float lastTemp = -999.0;
-static float lastSpeed = -999.0;
+// 状態管理変数
 static bool uiInitialized = false;
-static float currentBackgroundTemp = 20.0;  // 背景色計算用の現在温度
+static float lastTemperature = -999.0;
+static float lastSpeed = -999.0;
+static String lastTime = "";
+static String lastDate = "";
+static bool characterDisplayed = false;
 
-// 時刻表示用の静的変数
-static String lastDisplayTime = "";
-static String lastDisplayDate = "";
+// 温度連動背景色用の変数
+static float currentBackgroundTemp = 20.0;  // デフォルト温度
+static float lastBackgroundUpdateTemp = -999.0;
 
-// 強制更新用の関数（背景変更時に使用）
-void forceUpdateAllDisplayValues() {
-    lastTemp = -999.0;
-    lastSpeed = -999.0;
-    lastDisplayTime = "";
-    lastDisplayDate = "";
-}
+// === 温度連動グラデーション色計算 ===
 
-// main.cppから前回値を設定するための関数
-void setLastDisplayValues(float temp, float speed, String timeStr, String dateStr) {
-    lastTemp = temp;
-    lastSpeed = speed;
-    lastDisplayTime = timeStr;
-    lastDisplayDate = dateStr;
-}
-
-// テスト用：強制的に青背景を設定（デバッグ用）
-void forceBlueBackground() {
-    Serial.println("Force setting blue background...");
-    currentBackgroundTemp = 20.0;  // 30℃未満の値を設定
-    drawTemperatureGradientBackground(20.0);
-    
-    // UI要素を再描画
-    tft.setTextColor(TFT_WHITE);
-    tft.setTextSize(3);
-    tft.drawString("Temp:", 200, 10);
-    tft.drawString("Speed:", 200, 130);
-    tft.drawString("km/h", 240, 180);
-    
-    // キャラクターも再描画
-    drawCharacterImageWithEdgeFade(10, 30);
-}
-
-// ===== 温度連動グラデーション関数 =====
-
-// 温度に基づいて背景色を決定する関数
+// 温度に応じた色を計算（高温時の緑色問題を完全修正）
 void getTemperatureColors(float temp, uint8_t* topR, uint8_t* topG, uint8_t* topB, 
                          uint8_t* bottomR, uint8_t* bottomG, uint8_t* bottomB) {
     if (temp >= 32.0) {
-        // 32℃以上：赤色系グラデーション（濃い赤 → 明るい赤）
-        *topR = 80;    *topG = 0;     *topB = 0;      // 上部：濃い赤
-        *bottomR = 255; *bottomG = 80;  *bottomB = 80;   // 下部：明るい赤
+        // 32℃以上：確実に赤色系グラデーション（濃い赤 → 明るい赤）
+        *topR = 120;   *topG = 0;     *topB = 0;      // 上部：濃い赤
+        *bottomR = 255; *bottomG = 60;  *bottomB = 60;   // 下部：明るい赤
     } else if (temp >= 30.0) {
-        // 30-32℃：青から赤への遷移
+        // 30-32℃：青から赤への確実な遷移（緑を完全に避ける）
         float ratio = (temp - 30.0) / 2.0;  // 0.0 → 1.0
         
-        // 青色から赤色への補間
-        *topR = (uint8_t)(0 + (80 * ratio));       // 0 → 80
-        *topG = (uint8_t)(0 * (1.0 - ratio));     // 0 → 0  
+        // 青色から赤色への直接補間（緑成分を最小限に）
+        *topR = (uint8_t)(0 + (120 * ratio));      // 0 → 120
+        *topG = (uint8_t)(0 + (0 * ratio));       // 0 → 0 (緑成分なし)
         *topB = (uint8_t)(128 * (1.0 - ratio));   // 128 → 0
         
         *bottomR = (uint8_t)(64 + (191 * ratio));  // 64 → 255
-        *bottomG = (uint8_t)(128 * (1.0 - ratio) + (80 * ratio)); // 128 → 80
-        *bottomB = (uint8_t)(255 * (1.0 - ratio) + (80 * ratio)); // 255 → 80
+        *bottomG = (uint8_t)(128 * (1.0 - ratio) + (60 * ratio)); // 128 → 60 (緑成分を抑制)
+        *bottomB = (uint8_t)(255 * (1.0 - ratio) + (60 * ratio)); // 255 → 60
+    } else if (temp >= 25.0) {
+        // 25-30℃：青系グラデーション
+        *topR = 0; *topG = 20; *topB = 100;     
+        *bottomR = 40; *bottomG = 80; *bottomB = 180;  
     } else {
-        // 30℃未満：通常の青色グラデーション（濃い青 → 明るい青）
-        *topR = 0;     *topG = 0;     *topB = 128;    // 上部：濃い青
-        *bottomR = 64; *bottomG = 128; *bottomB = 255; // 下部：明るい青
+        // 25℃未満：濃い青色グラデーション
+        *topR = 0; *topG = 0; *topB = 128;    
+        *bottomR = 64; *bottomG = 128; *bottomB = 255;
     }
 }
 
@@ -132,6 +106,31 @@ void drawGradientArea(int x, int y, int width, int height) {
 // 背景色の温度を更新（他のモジュールから呼び出される）
 void updateBackgroundTemperature(float temp) {
     currentBackgroundTemp = temp;
+}
+
+// ===== CarBuddyタイトル表示関数 =====
+
+// 画面上部のキャラクター空白部分にCarBuddyタイトルを表示
+void drawCarBuddyTitle() {
+    // タイトル設定（キャラクター画像の上部空白に配置）
+    String title = "CarBuddy";
+    int titleSize = 2;  // フォントサイズ
+    int titleX = 25;    // キャラクター画像の上部中央に配置
+    int titleY = 8;     // キャラクター画像の上部空白部分
+    
+    // タイトル用の背景エリアを温度連動グラデーションで描画
+    drawTemperatureGradientArea(titleX - 2, titleY - 2, 
+                               title.length() * 12 + 4, 20, currentBackgroundTemp);
+    
+    // タイトルテキストを白色で描画（視認性重視）
+    tft.setTextSize(titleSize);
+    tft.setTextColor(TFT_WHITE);
+    tft.drawString(title, titleX, titleY);
+}
+
+// タイトルエリアの更新（温度変化時の再描画用）
+void updateCarBuddyTitle() {
+    drawCarBuddyTitle();
 }
 
 // ===== 既存関数（温度連動背景対応版） =====
@@ -209,7 +208,7 @@ void drawUI() {
     }
 }
 
-// メイン画面をフェードインで表示（温度連動グラデーション対応）
+// メイン画面をフェードインで表示（元の位置に戻す）
 void fadeInMainScreen() {
     // フェードイン（8段階）
     for (int fade = 0; fade <= 7; fade++) {
@@ -234,12 +233,18 @@ void fadeInMainScreen() {
         // テキスト色のフェード（白文字で視認性重視）
         uint16_t textColor = tft.color565(fade * 32, fade * 32, fade * 32);
         tft.setTextColor(textColor);
-        tft.setTextSize(3);
         
-        // 固定ラベルを描画
-        tft.drawString("Temp:", 200, 10);
+        // CarBuddyタイトルを表示（キャラクター上部空白に）
+        if (fade >= 3) {  // 少し遅れてタイトル表示
+            tft.setTextSize(2);
+            tft.drawString("CarBuddy", 25, 8);  // キャラクター上部空白に配置
+        }
+        
+        // 固定ラベルを描画（元の位置に戻す）
+        tft.setTextSize(3);
+        tft.drawString("Temp:", 200, 10);     // 元の位置に戻す
         tft.drawString("Speed:", 200, 130);
-        tft.drawString("km/h", 240, 180);
+        tft.drawString("km/h", 240, 180);     // 元の位置に戻す
         
         delay(80);  // フェード速度
     }
@@ -249,6 +254,12 @@ void fadeInMainScreen() {
     
     // 最終テキスト描画（白文字で見やすく）
     tft.setTextColor(TFT_WHITE);
+    
+    // CarBuddyタイトルを表示（キャラクター上部空白に）
+    tft.setTextSize(2);
+    tft.drawString("CarBuddy", 25, 8);
+    
+    // 固定ラベル（元の位置）
     tft.setTextSize(3);
     tft.drawString("Temp:", 200, 10);
     tft.drawString("Speed:", 200, 130);
@@ -319,12 +330,12 @@ void drawCharacterImage(int x, int y) {
     tft.endWrite();
 }
 
-// キャラクター画像を縁フェード付きで表示（温度連動グラデーション背景対応）
+// キャラクター画像を縁ぼかし効果付きで表示
 void drawCharacterImageWithEdgeFade(int x, int y) {
     const int originalSize = 160;
     const int newSize = 180;
     const float scale = (float)newSize / originalSize;
-    const int fadeWidth = 8;  // フェード幅を小さく（弱め）
+    const int fadeWidth = 8;  // フェード幅（ピクセル）
     
     tft.startWrite();
     tft.setAddrWindow(x, y, newSize, newSize);
@@ -340,36 +351,36 @@ void drawCharacterImageWithEdgeFade(int x, int y) {
             int srcIndex = srcRow * originalSize + srcCol;
             uint16_t originalColor = pgm_read_word(&characterImage[srcIndex]);
             
-            // 四角い縁からの距離を計算
-            int distFromEdge = min(min(row, col), min(newSize - 1 - row, newSize - 1 - col));
+            // 縁からの距離を計算
+            int distanceFromEdge = min(min(row, newSize - row - 1), min(col, newSize - col - 1));
             
-            if (distFromEdge < fadeWidth) {
-                // フェード領域：温度連動グラデーション背景色と軽くブレンド
-                float alpha = 0.3 + 0.7 * ((float)distFromEdge / fadeWidth);  // 0.3-1.0の範囲（弱め）
+            if (distanceFromEdge < fadeWidth) {
+                // フェード処理
+                float alpha = 0.3 + 0.7 * ((float)distanceFromEdge / fadeWidth);
                 
-                // 元の色を分解
-                uint8_t r = (originalColor >> 11) & 0x1F;
-                uint8_t g = (originalColor >> 5) & 0x3F;
-                uint8_t b = originalColor & 0x1F;
-                
-                // 温度連動グラデーション背景色を計算（その位置での背景色）
+                // 背景色を取得（温度連動グラデーション）
+                float backgroundRatio = (float)(y + row) / 240.0;
                 uint8_t topR, topG, topB, bottomR, bottomG, bottomB;
                 getTemperatureColors(currentBackgroundTemp, &topR, &topG, &topB, &bottomR, &bottomG, &bottomB);
                 
-                float bgY = (float)(y + row) / 240.0;
-                uint8_t bgR = (uint8_t)(topR + ((bottomR - topR) * bgY)) >> 3;  // 5ビットに変換
-                uint8_t bgG = (uint8_t)(topG + ((bottomG - topG) * bgY)) >> 2; // 6ビットに変換
-                uint8_t bgB = (uint8_t)(topB + ((bottomB - topB) * bgY)) >> 3; // 5ビットに変換
+                uint8_t bgR = (uint8_t)(topR + ((bottomR - topR) * backgroundRatio));
+                uint8_t bgG = (uint8_t)(topG + ((bottomG - topG) * backgroundRatio));
+                uint8_t bgB = (uint8_t)(topB + ((bottomB - topB) * backgroundRatio));
                 
-                // 軽いアルファブレンド
-                uint8_t blendR = (uint8_t)(r * alpha + bgR * (1.0 - alpha));
-                uint8_t blendG = (uint8_t)(g * alpha + bgG * (1.0 - alpha));
-                uint8_t blendB = (uint8_t)(b * alpha + bgB * (1.0 - alpha));
+                // 色の分解と合成
+                uint8_t charR = (originalColor >> 11) & 0x1F;
+                uint8_t charG = (originalColor >> 5) & 0x3F;
+                uint8_t charB = originalColor & 0x1F;
                 
-                uint16_t fadeColor = (blendR << 11) | (blendG << 5) | blendB;
-                tft.pushColor(fadeColor);
+                // アルファブレンド
+                uint8_t finalR = (uint8_t)((charR << 3) * alpha + bgR * (1.0 - alpha)) >> 3;
+                uint8_t finalG = (uint8_t)((charG << 2) * alpha + bgG * (1.0 - alpha)) >> 2;
+                uint8_t finalB = (uint8_t)((charB << 3) * alpha + bgB * (1.0 - alpha)) >> 3;
+                
+                uint16_t finalColor = tft.color565(finalR << 3, finalG << 2, finalB << 3);
+                tft.pushColor(finalColor);
             } else {
-                // 通常領域：元の色をそのまま
+                // フェードなし
                 tft.pushColor(originalColor);
             }
         }
@@ -378,189 +389,94 @@ void drawCharacterImageWithEdgeFade(int x, int y) {
     tft.endWrite();
 }
 
-// より高品質な縁フェード（ガウシアンブラー風・温度連動対応）
-void drawCharacterImageWithSoftEdge(int x, int y) {
-    const int originalSize = 160;
-    const int newSize = 180;
-    const float scale = (float)newSize / originalSize;
-    const int fadeWidth = 20;  // フェード幅
-    
-    tft.startWrite();
-    tft.setAddrWindow(x, y, newSize, newSize);
-    
-    for (int row = 0; row < newSize; row++) {
-        for (int col = 0; col < newSize; col++) {
-            int srcRow = (int)(row / scale);
-            int srcCol = (int)(col / scale);
-            
-            if (srcRow >= originalSize) srcRow = originalSize - 1;
-            if (srcCol >= originalSize) srcCol = originalSize - 1;
-            
-            int srcIndex = srcRow * originalSize + srcCol;
-            uint16_t originalColor = pgm_read_word(&characterImage[srcIndex]);
-            
-            // 中心からの距離でソフトな円形フェード
-            float centerX = newSize / 2.0;
-            float centerY = newSize / 2.0;
-            float distFromCenter = sqrt((row - centerY) * (row - centerY) + (col - centerX) * (col - centerX));
-            float maxRadius = newSize / 2.0;
-            float fadeRadius = maxRadius - fadeWidth;
-            
-            if (distFromCenter > fadeRadius) {
-                // フェード領域：円形グラデーション（温度連動背景対応）
-                float alpha = 1.0 - (distFromCenter - fadeRadius) / fadeWidth;
-                if (alpha < 0) alpha = 0;
-                
-                // 元の色を分解
-                uint8_t r = (originalColor >> 11) & 0x1F;
-                uint8_t g = (originalColor >> 5) & 0x3F;
-                uint8_t b = originalColor & 0x1F;
-                
-                // 温度連動グラデーション背景色と自然にブレンド
-                uint8_t topR, topG, topB, bottomR, bottomG, bottomB;
-                getTemperatureColors(currentBackgroundTemp, &topR, &topG, &topB, &bottomR, &bottomG, &bottomB);
-                
-                float bgY = (float)(y + row) / 240.0;
-                uint8_t bgR = (uint8_t)(topR + ((bottomR - topR) * bgY)) >> 3;
-                uint8_t bgG = (uint8_t)(topG + ((bottomG - topG) * bgY)) >> 2;
-                uint8_t bgB = (uint8_t)(topB + ((bottomB - topB) * bgY)) >> 3;
-                
-                uint8_t blendR = (uint8_t)(r * alpha + bgR * (1.0 - alpha));
-                uint8_t blendG = (uint8_t)(g * alpha + bgG * (1.0 - alpha));
-                uint8_t blendB = (uint8_t)(b * alpha + bgB * (1.0 - alpha));
-                
-                uint16_t fadeColor = (blendR << 11) | (blendG << 5) | blendB;
-                tft.pushColor(fadeColor);
-            } else {
-                // 通常領域
-                tft.pushColor(originalColor);
-            }
-        }
-    }
-    
-    tft.endWrite();
-}
+// ===== 差分描画対応の表示関数 =====
 
-// 時刻表示（温度連動グラデーション背景対応）
-void drawTime(String currentTime) {
-    // 時刻が変わった時のみ更新
-    if (currentTime != lastDisplayTime) {
-        // 背景の温度連動グラデーション色を再描画（時刻表示エリア + 余裕をもって広めに）
-        drawTemperatureGradientArea(5, 215, 90, 30, currentBackgroundTemp);
-        
-        // 新しい時刻を描画
-        tft.setTextSize(2);
-        tft.setTextColor(TFT_YELLOW);
-        tft.drawString(currentTime, 10, 220);
-        lastDisplayTime = currentTime;
-    }
-}
-
-// 日付表示（温度連動グラデーション背景対応）
-void drawDate(String currentDate) {
-    // 日付が変わった時のみ更新  
-    if (currentDate != lastDisplayDate) {
-        // 背景の温度連動グラデーション色を再描画（日付表示エリア + 余裕をもって広めに）
-        drawTemperatureGradientArea(95, 215, 130, 30, currentBackgroundTemp);
-        
-        // 新しい日付を描画
-        tft.setTextSize(2);
-        tft.setTextColor(TFT_CYAN);
-        tft.drawString(currentDate, 100, 220);
-        lastDisplayDate = currentDate;
-    }
-}
-
-// 温度表示（温度連動グラデーション背景対応）
+// 温度表示（元の位置に戻す）
 void drawTemperature(float temp) {
     // 値が変わった時のみ更新
-    if (abs(temp - lastTemp) > 0.1) {
-        // 背景温度を更新（重要：この処理で背景色が変わる）
-        updateBackgroundTemperature(temp);
+    if (abs(temp - lastTemperature) > 0.1) {
+        // 背景の温度連動グラデーション色を再描画（温度表示エリア + タイトルエリア）
+        drawTemperatureGradientArea(195, 30, 130, 35, currentBackgroundTemp);
         
-        // 小さな変化の場合は部分的な背景再描画
-        if (abs(temp - lastTemp) < 2.0) {
-            // 背景の温度連動グラデーション色を再描画（温度表示エリア + 余裕をもって広めに）
-            drawTemperatureGradientArea(195, 30, 130, 35, temp);
-            
-            // 温度値によって文字色を変更（視認性向上）
-            uint16_t textColor = TFT_WHITE;  // デフォルト：白
-            if (temp >= 32.0) {
-                textColor = TFT_YELLOW;  // 高温：黄色で警告
-            }
-            
-            // フォントサイズを明示的に設定
-            tft.setTextSize(3);
-            tft.setTextColor(textColor);
-            tft.drawString(String(temp, 1) + " C", 200, 35);
+        // CarBuddyタイトルも更新（背景色変化に対応）
+        updateCarBuddyTitle();
+        
+        // 温度値による文字色の判定
+        uint16_t tempTextColor = TFT_WHITE;
+        if (temp >= 32.0) {
+            tempTextColor = TFT_YELLOW;  // 高温時は警告として黄色
         }
         
-        lastTemp = temp;
-        
-        // 重要：温度変化時は常に全画面背景を更新（閾値を下げて確実に更新）
-        static float lastBackgroundUpdateTemp = -999.0;  // 初期値を-999に設定
-        if (abs(temp - lastBackgroundUpdateTemp) > 0.5) {  // 0.5℃変化で更新
-            Serial.print("Temperature-triggered background update: ");
-            Serial.print(lastBackgroundUpdateTemp);
-            Serial.print("°C → ");
-            Serial.print(temp);
-            Serial.println("°C");
-            
-            // === 背景とすべての要素を同期描画（ラグ解消） ===
-            
-            // 1. 現在値を取得
-            float currentSpeed = getSpeed();
-            String currentTimeStr = getCurrentTime();
-            String currentDateStr = getCurrentDate();
-            
-            // 2. 背景を更新
-            drawTemperatureGradientBackground(temp);
-            lastBackgroundUpdateTemp = temp;
-            
-            // 3. すべての要素を即座に描画
-            
-            // UI固定ラベル
-            tft.setTextColor(TFT_WHITE);
-            tft.setTextSize(3);
-            tft.drawString("Temp:", 200, 10);
-            tft.drawString("Speed:", 200, 130);
-            tft.drawString("km/h", 240, 180);
-            
-            // 温度表示（文字色判定付き）
-            uint16_t tempTextColor = TFT_WHITE;
-            if (temp >= 32.0) {
-                tempTextColor = TFT_YELLOW;
-            }
-            tft.setTextSize(3);
-            tft.setTextColor(tempTextColor);
-            tft.drawString(String(temp, 1) + " C", 200, 35);
-            
-            // 速度表示
-            tft.setTextSize(3);
-            tft.setTextColor(TFT_WHITE);
-            tft.drawString(String(abs(currentSpeed), 1), 200, 155);
-            
-            // 時刻表示
-            tft.setTextSize(2);
-            tft.setTextColor(TFT_YELLOW);
-            tft.drawString(currentTimeStr, 10, 220);
-            
-            // 日付表示
-            tft.setTextSize(2);
-            tft.setTextColor(TFT_CYAN);
-            tft.drawString(currentDateStr, 100, 220);
-            
-            // キャラクター描画
-            drawCharacterImageWithEdgeFade(10, 30);
-            
-            // 前回値を更新
-            forceUpdateAllDisplayValues();
-            setLastDisplayValues(temp, currentSpeed, currentTimeStr, currentDateStr);
-        }
+        // フォントサイズを明示的に設定
+        tft.setTextSize(3);
+        tft.setTextColor(tempTextColor);
+        tft.drawString(String(temp, 1) + " C", 200, 35);  // 元の位置に戻す
+        lastTemperature = temp;
     }
 }
 
-// 速度表示（温度連動グラデーション背景対応）
+// 全体同期表示（元の位置に戻す）
+void forceFullRedraw(float temp) {
+    // 背景が大きく変わった時の処理
+    if (abs(temp - lastBackgroundUpdateTemp) > 1.0) {
+        Serial.println("Background temperature change detected - forcing full redraw");
+        
+        // 1. 現在値を取得
+        float currentSpeed = getSpeed();
+        String currentTimeStr = getCurrentTime();
+        String currentDateStr = getCurrentDate();
+        
+        // 2. 背景を更新
+        drawTemperatureGradientBackground(temp);
+        lastBackgroundUpdateTemp = temp;
+        
+        // 3. すべての要素を即座に描画
+        
+        // CarBuddyタイトル（キャラクター上部空白に）
+        tft.setTextColor(TFT_WHITE);
+        tft.setTextSize(2);
+        tft.drawString("CarBuddy", 25, 8);
+        
+        // UI固定ラベル（元の位置に戻す）
+        tft.setTextSize(3);
+        tft.drawString("Temp:", 200, 10);
+        tft.drawString("Speed:", 200, 130);
+        tft.drawString("km/h", 240, 180);
+        
+        // 温度表示（文字色判定付き）
+        uint16_t tempTextColor = TFT_WHITE;
+        if (temp >= 32.0) {
+            tempTextColor = TFT_YELLOW;
+        }
+        tft.setTextSize(3);
+        tft.setTextColor(tempTextColor);
+        tft.drawString(String(temp, 1) + " C", 200, 35);
+        
+        // 速度表示
+        tft.setTextSize(3);
+        tft.setTextColor(TFT_WHITE);
+        tft.drawString(String(abs(currentSpeed), 1), 200, 155);
+        
+        // 時刻表示
+        tft.setTextSize(2);
+        tft.setTextColor(TFT_YELLOW);
+        tft.drawString(currentTimeStr, 10, 220);
+        
+        // 日付表示（位置調整）
+        tft.setTextSize(2);
+        tft.setTextColor(TFT_CYAN);
+        tft.drawString(currentDateStr, 95, 220);  // X座標を100→95に調整
+        
+        // キャラクター描画（元の位置）
+        drawCharacterImageWithEdgeFade(10, 30);  // 元の位置に戻す
+        
+        // 前回値を更新
+        forceUpdateAllDisplayValues();
+        setLastDisplayValues(temp, currentSpeed, currentTimeStr, currentDateStr);
+    }
+}
+
+// 速度表示（元の位置に戻す）
 void drawSpeed(float speed) {
     // 値が変わった時のみ更新
     if (abs(speed - lastSpeed) > 0.1) {
@@ -570,7 +486,63 @@ void drawSpeed(float speed) {
         // フォントサイズを明示的に設定
         tft.setTextSize(3);
         tft.setTextColor(TFT_WHITE);
-        tft.drawString(String(abs(speed), 1), 200, 155);
+        tft.drawString(String(abs(speed), 1), 200, 155);  // 元の位置に戻す
         lastSpeed = speed;
     }
+}
+
+// 時刻表示（温度連動グラデーション背景対応）
+void drawTime(String timeStr) {
+    if (timeStr != lastTime) {
+        // 背景の温度連動グラデーション色を再描画（時刻表示エリア - 幅を調整）
+        drawTemperatureGradientArea(5, 215, 80, 25, currentBackgroundTemp);  // 幅を100→80に短縮
+        
+        // フォントサイズを明示的に設定
+        tft.setTextSize(2);
+        tft.setTextColor(TFT_YELLOW);
+        tft.drawString(timeStr, 10, 220);
+        lastTime = timeStr;
+    }
+}
+
+// 日付表示（温度連動グラデーション背景対応）
+void drawDate(String dateStr) {
+    if (dateStr != lastDate) {
+        // 背景の温度連動グラデーション色を再描画（日付表示エリア - 開始位置を調整）
+        drawTemperatureGradientArea(90, 215, 130, 25, currentBackgroundTemp);  // X座標を95→90に調整
+        
+        // フォントサイズを明示的に設定
+        tft.setTextSize(2);
+        tft.setTextColor(TFT_CYAN);
+        tft.drawString(dateStr, 95, 220);  // 表示位置も100→95に調整
+        lastDate = dateStr;
+    }
+}
+
+// キャラクター表示管理（元の位置）
+void drawCharacter() {
+    if (!characterDisplayed) {
+        drawCharacterImageWithEdgeFade(10, 30);  // 元の位置に戻す
+        characterDisplayed = true;
+    }
+}
+
+// ===== 状態管理関数 =====
+
+// 前回値を強制更新（全体再描画後に使用）
+void forceUpdateAllDisplayValues() {
+    lastTemperature = -999.0;
+    lastSpeed = -999.0;
+    lastTime = "";
+    lastDate = "";
+    characterDisplayed = false;
+}
+
+// 前回値を設定（強制再描画後に使用）
+void setLastDisplayValues(float temp, float speed, String timeStr, String dateStr) {
+    lastTemperature = temp;
+    lastSpeed = speed;
+    lastTime = timeStr;
+    lastDate = dateStr;
+    characterDisplayed = true;
 }

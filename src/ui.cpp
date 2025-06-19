@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include "ui.hpp"
-#include "characterImage.h"
+#include "characters/wink_close.h"
 #include "../include/temperature.hpp"
 #include "../include/speed.hpp"
 #include "../include/time.hpp"
@@ -286,7 +286,7 @@ void drawCharacterImageWithFade(int x, int y) {
                 if (srcCol >= originalSize) srcCol = originalSize - 1;
                 
                 int srcIndex = srcRow * originalSize + srcCol;
-                uint16_t originalColor = pgm_read_word(&characterImage[srcIndex]);
+                uint16_t originalColor = pgm_read_word(&winkCloseCharacterImage[srcIndex]);
                 
                 // 色をフェード処理
                 uint8_t r = ((originalColor >> 11) & 0x1F) * fade / 7;
@@ -321,7 +321,7 @@ void drawCharacterImage(int x, int y) {
             if (srcCol >= originalSize) srcCol = originalSize - 1;
             
             int srcIndex = srcRow * originalSize + srcCol;
-            uint16_t color = pgm_read_word(&characterImage[srcIndex]);
+            uint16_t color = pgm_read_word(&winkCloseCharacterImage[srcIndex]);
             
             tft.pushColor(color);
         }
@@ -349,7 +349,7 @@ void drawCharacterImageWithEdgeFade(int x, int y) {
             if (srcCol >= originalSize) srcCol = originalSize - 1;
             
             int srcIndex = srcRow * originalSize + srcCol;
-            uint16_t originalColor = pgm_read_word(&characterImage[srcIndex]);
+            uint16_t originalColor = pgm_read_word(&winkCloseCharacterImage[srcIndex]);
             
             // 縁からの距離を計算
             int distanceFromEdge = min(min(row, newSize - row - 1), min(col, newSize - col - 1));

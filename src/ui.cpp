@@ -2,6 +2,7 @@
 #include <TFT_eSPI.h>
 #include "ui.hpp"
 #include "characters/wink_close.h"
+#include "characters/wink_hot.h"      // 追加：高温用キャラクター画像
 #include "../include/temperature.hpp"
 #include "../include/speed.hpp"
 #include "../include/time.hpp"
@@ -15,6 +16,7 @@ static float lastSpeed = -999.0;
 static String lastTime = "";
 static String lastDate = "";
 static bool characterDisplayed = false;
+static bool isHotCharacterMode = false;  // 追加：高温キャラクターモード状態
 
 // 温度連動背景色用の変数
 static float currentBackgroundTemp = 20.0;  // デフォルト温度
@@ -66,211 +68,150 @@ void drawTemperatureGradientBackground(float temp) {
         uint8_t g = (uint8_t)(topG + ((bottomG - topG) * ratio));
         uint8_t b = (uint8_t)(topB + ((bottomB - topB) * ratio));
         
-        uint16_t lineColor = tft.color565(r, g, b);
+        // RGB565色に変換
+        uint16_t color = tft.color565(r, g, b);
         
-        // 横一列を描画
-        tft.drawFastHLine(0, y, 320, lineColor);
+        // 1行分を描画
+        tft.drawFastHLine(0, y, 320, color);
     }
 }
 
-// 特定エリアの温度連動グラデーション背景を再描画（文字消去用）
+// 指定領域のみ温度連動グラデーション背景を描画
 void drawTemperatureGradientArea(int x, int y, int width, int height, float temp) {
     uint8_t topR, topG, topB, bottomR, bottomG, bottomB;
     getTemperatureColors(temp, &topR, &topG, &topB, &bottomR, &bottomG, &bottomB);
     
-    for (int row = y; row < y + height; row++) {
-        if (row >= 240) break;  // 画面外チェック
+    for (int row = 0; row < height; row++) {
+        float ratio = (float)(y + row) / 240.0;
         
-        float ratio = (float)row / 240.0;
         uint8_t r = (uint8_t)(topR + ((bottomR - topR) * ratio));
         uint8_t g = (uint8_t)(topG + ((bottomG - topG) * ratio));
         uint8_t b = (uint8_t)(topB + ((bottomB - topB) * ratio));
-        uint16_t lineColor = tft.color565(r, g, b);
         
-        tft.drawFastHLine(x, row, width, lineColor);
+        uint16_t color = tft.color565(r, g, b);
+        tft.drawFastHLine(x, y + row, width, color);
     }
 }
 
-// === 既存関数を温度連動に変更 ===
-
-// 基本的なグラデーション背景を描画（後方互換性のため残す）
-void drawGradientBackground() {
-    drawTemperatureGradientBackground(currentBackgroundTemp);
-}
-
-// 特定エリアのグラデーション背景を再描画（後方互換性のため残す）
-void drawGradientArea(int x, int y, int width, int height) {
-    drawTemperatureGradientArea(x, y, width, height, currentBackgroundTemp);
-}
-
-// 背景色の温度を更新（他のモジュールから呼び出される）
+// 温度連動背景色更新
 void updateBackgroundTemperature(float temp) {
     currentBackgroundTemp = temp;
 }
 
-// ===== CarBuddyタイトル表示関数 =====
-
-// 画面上部のキャラクター空白部分にCarBuddyタイトルを表示
-void drawCarBuddyTitle() {
-    // タイトル設定（キャラクター画像の上部空白に配置）
-    String title = "CarBuddy";
-    int titleSize = 2;  // フォントサイズ
-    int titleX = 25;    // キャラクター画像の上部中央に配置
-    int titleY = 8;     // キャラクター画像の上部空白部分
-    
-    // タイトル用の背景エリアを温度連動グラデーションで描画
-    drawTemperatureGradientArea(titleX - 2, titleY - 2, 
-                               title.length() * 12 + 4, 20, currentBackgroundTemp);
-    
-    // タイトルテキストを白色で描画（視認性重視）
-    tft.setTextSize(titleSize);
-    tft.setTextColor(TFT_WHITE);
-    tft.drawString(title, titleX, titleY);
+// 後方互換性のための関数
+void drawGradientBackground() {
+    drawTemperatureGradientBackground(currentBackgroundTemp);
 }
 
-// タイトルエリアの更新（温度変化時の再描画用）
+void drawGradientArea(int x, int y, int width, int height) {
+    drawTemperatureGradientArea(x, y, width, height, currentBackgroundTemp);
+}
+
+// CarBuddyタイトル表示
+void drawCarBuddyTitle() {
+    tft.setTextSize(2);
+    tft.setTextColor(TFT_WHITE);
+    tft.drawString("CarBuddy", 25, 8);
+}
+
 void updateCarBuddyTitle() {
+    drawTemperatureGradientArea(25, 8, 120, 16, currentBackgroundTemp);
     drawCarBuddyTitle();
 }
 
-// ===== 既存関数（温度連動背景対応版） =====
+// === スプラッシュ画面とフェードイン ===
 
-// スプラッシュ画面を表示
 void showSplashScreen() {
-    // 基本設定
-    String title = "car-buddy";
-    String subtitle = "Talking Monitor v1.0";
-    int titleX = (320 - title.length() * 24) / 2;
-    int titleY = (240 - 32) / 2;
-    int subX = (320 - subtitle.length() * 12) / 2;
-    int subY = titleY + 50;
+    tft.fillScreen(TFT_BLACK);
     
-    // フェードイン（16段階でより滑らか）
-    for (int fade = 0; fade <= 15; fade++) {
-        tft.fillScreen(TFT_BLACK);
-        
-        // より広い範囲でフェード効果（0-255の範囲を使用）
-        uint8_t brightness = fade * 17;  // 0, 17, 34, ..., 255
-        uint16_t fadeColor = tft.color565(brightness, brightness, brightness);
-        tft.setTextColor(fadeColor, TFT_BLACK);
-        
-        // タイトル描画
+    for (int fade = 0; fade <= 8; fade++) {
+        tft.setTextColor(tft.color565(fade * 32, fade * 32, fade * 32));
         tft.setTextSize(4);
-        tft.drawString(title, titleX, titleY);
+        tft.drawString("car-buddy", 50, 100);
+        delay(300);
         
-        // サブタイトル描画
-        tft.setTextSize(2);
-        tft.drawString(subtitle, subX, subY);
-        
-        delay(150);  // フェード速度を少し遅く
+        if (fade < 8) {
+            tft.fillRect(50, 100, 220, 32, TFT_BLACK);
+        }
     }
     
-    // 完全表示（白色で確実に表示）
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextSize(4);
-    tft.drawString(title, titleX, titleY);
-    tft.setTextSize(2);
-    tft.drawString(subtitle, subX, subY);
+    delay(1000);
     
-    delay(1500);  // 完全表示時間を少し長く
-    
-    // フェードアウト（16段階）
-    for (int fade = 15; fade >= 0; fade--) {
-        tft.fillScreen(TFT_BLACK);
-        
-        // フェードアウト効果
-        uint8_t brightness = fade * 17;
-        uint16_t fadeColor = tft.color565(brightness, brightness, brightness);
-        tft.setTextColor(fadeColor, TFT_BLACK);
-        
-        // タイトル描画
+    for (int fade = 8; fade >= 0; fade--) {
+        tft.fillRect(50, 100, 220, 32, TFT_BLACK);
+        tft.setTextColor(tft.color565(fade * 32, fade * 32, fade * 32));
         tft.setTextSize(4);
-        tft.drawString(title, titleX, titleY);
-        
-        // サブタイトル描画
-        tft.setTextSize(2);
-        tft.drawString(subtitle, subX, subY);
-        
-        delay(120);  // フェードアウト速度
+        tft.drawString("car-buddy", 50, 100);
+        delay(200);
     }
     
-    // 最終的に黒画面
+    delay(500);
     tft.fillScreen(TFT_BLACK);
-    delay(300);
 }
 
-void drawUI() {
-    if (!uiInitialized) {
-        // メイン画面のフェードイン
-        fadeInMainScreen();
-        uiInitialized = true;
-    }
-}
-
-// メイン画面をフェードインで表示（元の位置に戻す）
 void fadeInMainScreen() {
-    // フェードイン（8段階）
     for (int fade = 0; fade <= 7; fade++) {
-        // 温度連動グラデーション背景を描画
-        drawTemperatureGradientBackground(currentBackgroundTemp);
+        tft.fillScreen(TFT_BLACK);
         
-        // フェード効果のためのオーバーレイ
-        if (fade < 7) {
-            uint8_t fadeAlpha = 255 - (fade * 32);
-            uint16_t fadeOverlay = tft.color565(fadeAlpha / 8, fadeAlpha / 8, fadeAlpha / 4);
-            
-            // 半透明オーバーレイでフェード効果（軽量化版）
-            for (int y = 0; y < 240; y += 3) {
+        if (fade >= 2) {
+            uint16_t fadeOverlay = tft.color565(fade * 8, fade * 8, fade * 8);
+            for (int y = 0; y < 240; y += 4) {
                 for (int x = 0; x < 320; x += 3) {
-                    if ((x + y) % 6 == 0) {  // まばらなパターンで軽量化
+                    if ((x + y) % 6 == 0) {
                         tft.drawPixel(x, y, fadeOverlay);
                     }
                 }
             }
         }
         
-        // テキスト色のフェード（白文字で視認性重視）
         uint16_t textColor = tft.color565(fade * 32, fade * 32, fade * 32);
         tft.setTextColor(textColor);
         
-        // CarBuddyタイトルを表示（キャラクター上部空白に）
-        if (fade >= 3) {  // 少し遅れてタイトル表示
+        if (fade >= 3) {
             tft.setTextSize(2);
-            tft.drawString("CarBuddy", 25, 8);  // キャラクター上部空白に配置
+            tft.drawString("CarBuddy", 25, 8);
         }
         
-        // 固定ラベルを描画（元の位置に戻す）
         tft.setTextSize(3);
-        tft.drawString("Temp:", 200, 10);     // 元の位置に戻す
+        tft.drawString("Temp:", 200, 10);
         tft.drawString("Speed:", 200, 130);
-        tft.drawString("km/h", 240, 180);     // 元の位置に戻す
+        tft.drawString("km/h", 240, 180);
         
-        delay(80);  // フェード速度
+        delay(80);
     }
     
-    // 最終的に完全な温度連動グラデーション背景で描画
     drawTemperatureGradientBackground(currentBackgroundTemp);
     
-    // 最終テキスト描画（白文字で見やすく）
     tft.setTextColor(TFT_WHITE);
     
-    // CarBuddyタイトルを表示（キャラクター上部空白に）
     tft.setTextSize(2);
     tft.drawString("CarBuddy", 25, 8);
     
-    // 固定ラベル（元の位置）
     tft.setTextSize(3);
     tft.drawString("Temp:", 200, 10);
     tft.drawString("Speed:", 200, 130);
     tft.drawString("km/h", 240, 180);
 }
 
-// キャラクター画像をフェードインで表示
+// === 温度連動キャラクター画像表示関数（新規追加） ===
+
+// 温度に応じて適切なキャラクター画像配列を選択
+const uint16_t* getCharacterImageArray(float temp) {
+    if (temp >= 32.0) {
+        return winkHotCharacterImage;    // 32℃以上は高温用画像
+    } else {
+        return winkCloseCharacterImage;  // 32℃未満は通常画像
+    }
+}
+
+// キャラクター画像をフェードインで表示（温度連動版）
 void drawCharacterImageWithFade(int x, int y) {
     const int originalSize = 160;
     const int newSize = 180;
     const float scale = (float)newSize / originalSize;
+    
+    // 現在の温度に応じた画像配列を取得
+    const uint16_t* characterImage = getCharacterImageArray(currentBackgroundTemp);
     
     // フェードイン（8段階）
     for (int fade = 0; fade <= 7; fade++) {
@@ -286,7 +227,7 @@ void drawCharacterImageWithFade(int x, int y) {
                 if (srcCol >= originalSize) srcCol = originalSize - 1;
                 
                 int srcIndex = srcRow * originalSize + srcCol;
-                uint16_t originalColor = pgm_read_word(&winkCloseCharacterImage[srcIndex]);
+                uint16_t originalColor = pgm_read_word(&characterImage[srcIndex]);
                 
                 // 色をフェード処理
                 uint8_t r = ((originalColor >> 11) & 0x1F) * fade / 7;
@@ -299,15 +240,18 @@ void drawCharacterImageWithFade(int x, int y) {
         }
         
         tft.endWrite();
-        delay(60);  // キャラクターフェード速度
+        delay(60);
     }
 }
 
-// 通常のキャラクター画像表示（フェードなし）
+// 通常のキャラクター画像表示（温度連動版）
 void drawCharacterImage(int x, int y) {
     const int originalSize = 160;
     const int newSize = 180;
     const float scale = (float)newSize / originalSize;
+    
+    // 現在の温度に応じた画像配列を取得
+    const uint16_t* characterImage = getCharacterImageArray(currentBackgroundTemp);
     
     tft.startWrite();
     tft.setAddrWindow(x, y, newSize, newSize);
@@ -321,7 +265,7 @@ void drawCharacterImage(int x, int y) {
             if (srcCol >= originalSize) srcCol = originalSize - 1;
             
             int srcIndex = srcRow * originalSize + srcCol;
-            uint16_t color = pgm_read_word(&winkCloseCharacterImage[srcIndex]);
+            uint16_t color = pgm_read_word(&characterImage[srcIndex]);
             
             tft.pushColor(color);
         }
@@ -330,12 +274,15 @@ void drawCharacterImage(int x, int y) {
     tft.endWrite();
 }
 
-// キャラクター画像を縁ぼかし効果付きで表示
+// キャラクター画像を縁ぼかし効果付きで表示（温度連動版）
 void drawCharacterImageWithEdgeFade(int x, int y) {
     const int originalSize = 160;
     const int newSize = 180;
     const float scale = (float)newSize / originalSize;
-    const int fadeWidth = 8;  // フェード幅（ピクセル）
+    const int fadeWidth = 8;
+    
+    // 現在の温度に応じた画像配列を取得
+    const uint16_t* characterImage = getCharacterImageArray(currentBackgroundTemp);
     
     tft.startWrite();
     tft.setAddrWindow(x, y, newSize, newSize);
@@ -349,7 +296,7 @@ void drawCharacterImageWithEdgeFade(int x, int y) {
             if (srcCol >= originalSize) srcCol = originalSize - 1;
             
             int srcIndex = srcRow * originalSize + srcCol;
-            uint16_t originalColor = pgm_read_word(&winkCloseCharacterImage[srcIndex]);
+            uint16_t originalColor = pgm_read_word(&characterImage[srcIndex]);
             
             // 縁からの距離を計算
             int distanceFromEdge = min(min(row, newSize - row - 1), min(col, newSize - col - 1));
@@ -391,7 +338,7 @@ void drawCharacterImageWithEdgeFade(int x, int y) {
 
 // ===== 差分描画対応の表示関数 =====
 
-// 温度表示（元の位置に戻す）
+// 温度表示
 void drawTemperature(float temp) {
     // 値が変わった時のみ更新
     if (abs(temp - lastTemperature) > 0.1) {
@@ -410,94 +357,28 @@ void drawTemperature(float temp) {
         // フォントサイズを明示的に設定
         tft.setTextSize(3);
         tft.setTextColor(tempTextColor);
-        tft.drawString(String(temp, 1) + " C", 200, 35);  // 元の位置に戻す
+        tft.drawString(String(temp, 1) + " C", 200, 35);
         lastTemperature = temp;
     }
 }
 
-// 全体同期表示（元の位置に戻す）
-void forceFullRedraw(float temp) {
-    // 背景が大きく変わった時の処理
-    if (abs(temp - lastBackgroundUpdateTemp) > 1.0) {
-        Serial.println("Background temperature change detected - forcing full redraw");
-        
-        // 1. 現在値を取得
-        float currentSpeed = getSpeed();
-        String currentTimeStr = getCurrentTime();
-        String currentDateStr = getCurrentDate();
-        
-        // 2. 背景を更新
-        drawTemperatureGradientBackground(temp);
-        lastBackgroundUpdateTemp = temp;
-        
-        // 3. すべての要素を即座に描画
-        
-        // CarBuddyタイトル（キャラクター上部空白に）
-        tft.setTextColor(TFT_WHITE);
-        tft.setTextSize(2);
-        tft.drawString("CarBuddy", 25, 8);
-        
-        // UI固定ラベル（元の位置に戻す）
-        tft.setTextSize(3);
-        tft.drawString("Temp:", 200, 10);
-        tft.drawString("Speed:", 200, 130);
-        tft.drawString("km/h", 240, 180);
-        
-        // 温度表示（文字色判定付き）
-        uint16_t tempTextColor = TFT_WHITE;
-        if (temp >= 32.0) {
-            tempTextColor = TFT_YELLOW;
-        }
-        tft.setTextSize(3);
-        tft.setTextColor(tempTextColor);
-        tft.drawString(String(temp, 1) + " C", 200, 35);
-        
-        // 速度表示
-        tft.setTextSize(3);
-        tft.setTextColor(TFT_WHITE);
-        tft.drawString(String(abs(currentSpeed), 1), 200, 155);
-        
-        // 時刻表示
-        tft.setTextSize(2);
-        tft.setTextColor(TFT_YELLOW);
-        tft.drawString(currentTimeStr, 10, 220);
-        
-        // 日付表示（位置調整）
-        tft.setTextSize(2);
-        tft.setTextColor(TFT_CYAN);
-        tft.drawString(currentDateStr, 95, 220);  // X座標を100→95に調整
-        
-        // キャラクター描画（元の位置）
-        drawCharacterImageWithEdgeFade(10, 30);  // 元の位置に戻す
-        
-        // 前回値を更新
-        forceUpdateAllDisplayValues();
-        setLastDisplayValues(temp, currentSpeed, currentTimeStr, currentDateStr);
-    }
-}
-
-// 速度表示（元の位置に戻す）
+// 速度表示
 void drawSpeed(float speed) {
-    // 値が変わった時のみ更新
     if (abs(speed - lastSpeed) > 0.1) {
-        // 背景の温度連動グラデーション色を再描画（速度表示エリア + 余裕をもって広めに）
-        drawTemperatureGradientArea(195, 150, 130, 35, currentBackgroundTemp);
+        drawTemperatureGradientArea(195, 150, 130, 25, currentBackgroundTemp);
         
-        // フォントサイズを明示的に設定
         tft.setTextSize(3);
         tft.setTextColor(TFT_WHITE);
-        tft.drawString(String(abs(speed), 1), 200, 155);  // 元の位置に戻す
+        tft.drawString(String(speed, 1), 200, 155);
         lastSpeed = speed;
     }
 }
 
-// 時刻表示（温度連動グラデーション背景対応）
+// 時刻表示
 void drawTime(String timeStr) {
     if (timeStr != lastTime) {
-        // 背景の温度連動グラデーション色を再描画（時刻表示エリア - 幅を調整）
         drawTemperatureGradientArea(5, 215, 80, 25, currentBackgroundTemp);  // 幅を100→80に短縮
         
-        // フォントサイズを明示的に設定
         tft.setTextSize(2);
         tft.setTextColor(TFT_YELLOW);
         tft.drawString(timeStr, 10, 220);
@@ -505,25 +386,38 @@ void drawTime(String timeStr) {
     }
 }
 
-// 日付表示（温度連動グラデーション背景対応）
+// 日付表示
 void drawDate(String dateStr) {
     if (dateStr != lastDate) {
-        // 背景の温度連動グラデーション色を再描画（日付表示エリア - 開始位置を調整）
-        drawTemperatureGradientArea(90, 215, 130, 25, currentBackgroundTemp);  // X座標を95→90に調整
+        drawTemperatureGradientArea(90, 215, 130, 25, currentBackgroundTemp);
         
-        // フォントサイズを明示的に設定
         tft.setTextSize(2);
         tft.setTextColor(TFT_CYAN);
-        tft.drawString(dateStr, 95, 220);  // 表示位置も100→95に調整
+        tft.drawString(dateStr, 95, 220);
         lastDate = dateStr;
     }
 }
 
-// キャラクター表示管理（元の位置）
+// キャラクター表示管理（温度連動版）
 void drawCharacter() {
-    if (!characterDisplayed) {
-        drawCharacterImageWithEdgeFade(10, 30);  // 元の位置に戻す
+    // 温度によるキャラクターモード切り替えチェック
+    bool shouldUseHotCharacter = (currentBackgroundTemp >= 32.0);
+    
+    // キャラクターが未表示、またはモードが変更された場合に再描画
+    if (!characterDisplayed || (shouldUseHotCharacter != isHotCharacterMode)) {
+        // 状態更新
+        isHotCharacterMode = shouldUseHotCharacter;
+        
+        // キャラクター表示エリアの背景を先にクリア
+        drawTemperatureGradientArea(10, 30, 180, 180, currentBackgroundTemp);
+        
+        // 新しいキャラクター画像を描画
+        drawCharacterImageWithEdgeFade(10, 30);
         characterDisplayed = true;
+        
+        // デバッグ出力
+        Serial.print("Character switched to: ");
+        Serial.println(isHotCharacterMode ? "HOT mode (wink_hot)" : "NORMAL mode (wink_close)");
     }
 }
 
@@ -545,4 +439,51 @@ void setLastDisplayValues(float temp, float speed, String timeStr, String dateSt
     lastTime = timeStr;
     lastDate = dateStr;
     characterDisplayed = true;
+}
+
+// 全体再描画
+void forceFullRedraw(float temp) {
+    if (abs(temp - lastBackgroundUpdateTemp) > 1.0) {
+        Serial.println("Background temperature change detected - forcing full redraw");
+        
+        float currentSpeed = getSpeed();
+        String currentTimeStr = getCurrentTime();
+        String currentDateStr = getCurrentDate();
+        
+        drawTemperatureGradientBackground(temp);
+        lastBackgroundUpdateTemp = temp;
+        
+        tft.setTextColor(TFT_WHITE);
+        tft.setTextSize(2);
+        tft.drawString("CarBuddy", 25, 8);
+        
+        tft.setTextSize(3);
+        tft.drawString("Temp:", 200, 10);
+        tft.drawString("Speed:", 200, 130);
+        tft.drawString("km/h", 240, 180);
+        
+        forceUpdateAllDisplayValues();
+        
+        drawTemperature(temp);
+        drawSpeed(currentSpeed);
+        drawTime(currentTimeStr);
+        drawDate(currentDateStr);
+        drawCharacter();  // 温度連動キャラクター表示
+        
+        setLastDisplayValues(temp, currentSpeed, currentTimeStr, currentDateStr);
+    }
+}
+
+// UI初期化
+void drawUI() {
+    Serial.println("Initializing UI...");
+    
+    updateBackgroundTemperature(20.0);
+    
+    fadeInMainScreen();
+    
+    drawCharacter();  // 温度連動キャラクター表示
+    
+    uiInitialized = true;
+    Serial.println("UI initialization completed");
 }

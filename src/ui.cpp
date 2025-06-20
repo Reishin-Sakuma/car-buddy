@@ -7,21 +7,22 @@
 #include "../include/speed.hpp"
 #include "../include/time.hpp"
 #include "../include/ui/ui_display.hpp"
+#include "../include/ui/ui_state.hpp"
 
 extern TFT_eSPI tft;
 
 // 状態管理変数
-static bool uiInitialized = false;
-static float lastTemperature = -999.0;
-static float lastSpeed = -999.0;
-static String lastTime = "";
-static String lastDate = "";
-static bool characterDisplayed = false;
-static bool isHotCharacterMode = false;  // 追加：高温キャラクターモード状態
+bool uiInitialized = false;
+float lastTemperature = -999.0;
+float lastSpeed = -999.0;
+String lastTime = "";
+String lastDate = "";
+bool characterDisplayed = false;
+bool isHotCharacterMode = false;
 
 // 温度連動背景色用の変数
 static float currentBackgroundTemp = 20.0;  // デフォルト温度
-static float lastBackgroundUpdateTemp = -999.0;
+float lastBackgroundUpdateTemp = -999.0;
 
 // === 温度連動グラデーション色計算 ===
 
@@ -393,58 +394,6 @@ void drawCharacter() {
     }
 }
 
-// ===== 状態管理関数 =====
-
-// 前回値を強制更新（全体再描画後に使用）
-void forceUpdateAllDisplayValues() {
-    lastTemperature = -999.0;
-    lastSpeed = -999.0;
-    lastTime = "";
-    lastDate = "";
-    characterDisplayed = false;
-}
-
-// 前回値を設定（強制再描画後に使用）
-void setLastDisplayValues(float temp, float speed, String timeStr, String dateStr) {
-    lastTemperature = temp;
-    lastSpeed = speed;
-    lastTime = timeStr;
-    lastDate = dateStr;
-    characterDisplayed = true;
-}
-
-// 全体再描画
-void forceFullRedraw(float temp) {
-    if (abs(temp - lastBackgroundUpdateTemp) > 1.0) {
-        Serial.println("Background temperature change detected - forcing full redraw");
-        
-        float currentSpeed = getSpeed();
-        String currentTimeStr = getCurrentTime();
-        String currentDateStr = getCurrentDate();
-        
-        drawTemperatureGradientBackground(temp);
-        lastBackgroundUpdateTemp = temp;
-        
-        tft.setTextColor(TFT_WHITE);
-        tft.setTextSize(2);
-        tft.drawString("CarBuddy", 25, 8);
-        
-        tft.setTextSize(3);
-        tft.drawString("Temp:", 200, 10);
-        tft.drawString("Speed:", 200, 130);
-        tft.drawString("km/h", 240, 180);
-        
-        forceUpdateAllDisplayValues();
-        
-        drawTemperature(temp);
-        drawSpeed(currentSpeed);
-        drawTime(currentTimeStr);
-        drawDate(currentDateStr);
-        drawCharacter();  // 温度連動キャラクター表示
-        
-        setLastDisplayValues(temp, currentSpeed, currentTimeStr, currentDateStr);
-    }
-}
 
 // UI初期化
 void drawUI() {

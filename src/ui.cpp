@@ -6,6 +6,7 @@
 #include "../include/temperature.hpp"
 #include "../include/speed.hpp"
 #include "../include/time.hpp"
+#include "../include/ui/ui_display.hpp"
 
 extern TFT_eSPI tft;
 
@@ -119,35 +120,6 @@ void updateCarBuddyTitle() {
     drawCarBuddyTitle();
 }
 
-// === スプラッシュ画面とフェードイン ===
-
-void showSplashScreen() {
-    tft.fillScreen(TFT_BLACK);
-    
-    for (int fade = 0; fade <= 8; fade++) {
-        tft.setTextColor(tft.color565(fade * 32, fade * 32, fade * 32));
-        tft.setTextSize(4);
-        tft.drawString("car-buddy", 50, 100);
-        delay(300);
-        
-        if (fade < 8) {
-            tft.fillRect(50, 100, 220, 32, TFT_BLACK);
-        }
-    }
-    
-    delay(1000);
-    
-    for (int fade = 8; fade >= 0; fade--) {
-        tft.fillRect(50, 100, 220, 32, TFT_BLACK);
-        tft.setTextColor(tft.color565(fade * 32, fade * 32, fade * 32));
-        tft.setTextSize(4);
-        tft.drawString("car-buddy", 50, 100);
-        delay(200);
-    }
-    
-    delay(500);
-    tft.fillScreen(TFT_BLACK);
-}
 
 void fadeInMainScreen() {
     for (int fade = 0; fade <= 7; fade++) {

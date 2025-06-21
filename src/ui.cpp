@@ -9,6 +9,7 @@
 #include "../include/ui/ui_temperature.hpp"
 #include "../include/ui/ui_character.hpp"
 #include "../include/ui/ui_data.hpp"
+#include "../include/ui/ui_compatibility.hpp"
 
 extern TFT_eSPI tft;
 

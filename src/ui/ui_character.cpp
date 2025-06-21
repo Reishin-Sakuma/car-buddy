@@ -11,6 +11,22 @@ extern TFT_eSPI tft;
 extern float currentBackgroundTemp;
 extern bool isHotCharacterMode;
 
+// 外部関数を参照（最新温度取得用）
+extern float getTemperature();
+
+// デバッグ用：現在の状態を表示する関数
+void debugCharacterState() {
+    float currentTemp = getTemperature();  // 最新温度を取得
+    Serial.print("Debug - realTemp: ");
+    Serial.print(currentTemp);
+    Serial.print(", currentBackgroundTemp: ");
+    Serial.print(currentBackgroundTemp);
+    Serial.print(", isHotCharacterMode: ");
+    Serial.print(isHotCharacterMode);
+    Serial.print(", shouldUseHot: ");
+    Serial.println(currentTemp >= 32.0);
+}
+
 // === 温度連動キャラクター画像表示関数 ===
 
 // 温度に応じて適切なキャラクター画像配列を選択
@@ -28,8 +44,9 @@ void drawCharacterImageWithFade(int x, int y) {
     const int newSize = 180;
     const float scale = (float)newSize / originalSize;
     
-    // 現在の温度に応じた画像配列を取得
-    const uint16_t* characterImage = getCharacterImageArray(currentBackgroundTemp);
+    // 最新の温度に応じた画像配列を取得
+    float currentTemp = getTemperature();
+    const uint16_t* characterImage = getCharacterImageArray(currentTemp);
     
     // フェードイン（8段階）
     for (int fade = 0; fade <= 7; fade++) {
@@ -68,8 +85,9 @@ void drawCharacterImage(int x, int y) {
     const int newSize = 180;
     const float scale = (float)newSize / originalSize;
     
-    // 現在の温度に応じた画像配列を取得
-    const uint16_t* characterImage = getCharacterImageArray(currentBackgroundTemp);
+    // 最新の温度に応じた画像配列を取得
+    float currentTemp = getTemperature();
+    const uint16_t* characterImage = getCharacterImageArray(currentTemp);
     
     tft.startWrite();
     tft.setAddrWindow(x, y, newSize, newSize);
@@ -99,8 +117,9 @@ void drawCharacterImageWithEdgeFade(int x, int y) {
     const float scale = (float)newSize / originalSize;
     const int fadeWidth = 8;
     
-    // 現在の温度に応じた画像配列を取得
-    const uint16_t* characterImage = getCharacterImageArray(currentBackgroundTemp);
+    // 最新の温度に応じた画像配列を取得
+    float currentTemp = getTemperature();
+    const uint16_t* characterImage = getCharacterImageArray(currentTemp);
     
     tft.startWrite();
     tft.setAddrWindow(x, y, newSize, newSize);
@@ -156,26 +175,47 @@ void drawCharacterImageWithEdgeFade(int x, int y) {
 
 // キャラクター領域をクリア
 void clearCharacterArea() {
-    const int x = 10, y = 35, size = 180;  // y座標を50→35に修正
+    const int x = 10, y = 40, size = 180;  // y座標を50→40に修正
     drawTemperatureGradientArea(x, y, size, size, currentBackgroundTemp);
 }
 
 // キャラクター表示のメイン関数
 void drawCharacter() {
-    // 温度変化に応じたキャラクター切り替えの確認
-    bool shouldUseHotCharacter = (currentBackgroundTemp >= 32.0);
+    // 最新の温度を直接取得
+    float currentTemp = getTemperature();
     
+    // デバッグ出力
+    debugCharacterState();
+    
+    // 温度変化に応じたキャラクター切り替えの確認（最新温度を使用）
+    bool shouldUseHotCharacter = (currentTemp >= 32.0);
+    
+    // キャラクター切り替えが必要かチェック
     if (shouldUseHotCharacter != isHotCharacterMode) {
+        Serial.println("Character mode change detected!");
         isHotCharacterMode = shouldUseHotCharacter;
         Serial.print("Character mode switched to: ");
         Serial.println(isHotCharacterMode ? "HOT mode (wink_hot)" : "NORMAL mode (wink_close)");
         
-        // キャラクター切り替え時は該当領域をクリア
+        // 必ず領域をクリアしてから描画
         clearCharacterArea();
+        
+        // キャラクター画像を縁ぼかし効果付きで表示
+        drawCharacterImageWithEdgeFade(10, 40);
+        
+        Serial.println("Character redrawn due to temperature change");
+    } else {
+        // 初回描画または状態変化なしの場合
+        if (!isHotCharacterMode && currentTemp < 32.0) {
+            // 通常モードの確認表示
+            Serial.println("Character drawn (normal mode)");
+        } else if (isHotCharacterMode && currentTemp >= 32.0) {
+            // 高温モードの確認表示
+            Serial.println("Character drawn (hot mode)");
+        }
+        
+        // 領域をクリアしてから描画（確実な表示のため）
+        clearCharacterArea();
+        drawCharacterImageWithEdgeFade(10, 40);
     }
-    
-    // キャラクター画像を縁ぼかし効果付きで表示（y座標を50→35に修正）
-    drawCharacterImageWithEdgeFade(10, 35);
-    
-    Serial.println("Character drawn from ui module");
 }

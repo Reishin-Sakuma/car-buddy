@@ -9,6 +9,7 @@ void drawCharacterImageWithFade(int x, int y);
 void drawCharacterImage(int x, int y);
 void drawCharacterImageWithEdgeFade(int x, int y);
 void drawCharacter();
-void clearCharacterArea();  // 追加：キャラクター領域クリア
+void clearCharacterArea();
+void debugCharacterState();  // 追加：デバッグ用
 
 #endif

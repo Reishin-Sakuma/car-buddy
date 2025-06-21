@@ -212,8 +212,6 @@ void loop() {
         lastTimeUpdate = currentTime;
     }
 
-    // === キャラクター表示 ===
-    drawCharacter();
 
     // === シリアルデバッグ出力 ===
     if (currentTime - lastSerialUpdate >= SERIAL_UPDATE_INTERVAL) {

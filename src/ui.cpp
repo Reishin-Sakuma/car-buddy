@@ -8,6 +8,7 @@
 #include "../include/ui/ui_state.hpp"
 #include "../include/ui/ui_temperature.hpp"
 #include "../include/ui/ui_character.hpp"
+#include "../include/ui/ui_data.hpp"
 
 extern TFT_eSPI tft;
 
@@ -86,66 +87,6 @@ void fadeInMainScreen() {
 
 
 // ===== 差分描画対応の表示関数 =====
-
-// 温度表示
-void drawTemperature(float temp) {
-    // 値が変わった時のみ更新
-    if (abs(temp - lastTemperature) > 0.1) {
-        // 背景の温度連動グラデーション色を再描画（温度表示エリア + タイトルエリア）
-        drawTemperatureGradientArea(195, 30, 130, 35, currentBackgroundTemp);
-        
-        // CarBuddyタイトルも更新（背景色変化に対応）
-        updateCarBuddyTitle();
-        
-        // 温度値による文字色の判定
-        uint16_t tempTextColor = TFT_WHITE;
-        if (temp >= 32.0) {
-            tempTextColor = TFT_YELLOW;  // 高温時は警告として黄色
-        }
-        
-        // フォントサイズを明示的に設定
-        tft.setTextSize(3);
-        tft.setTextColor(tempTextColor);
-        tft.drawString(String(temp, 1) + " C", 200, 35);
-        lastTemperature = temp;
-    }
-}
-
-// 速度表示
-void drawSpeed(float speed) {
-    if (abs(speed - lastSpeed) > 0.1) {
-        drawTemperatureGradientArea(195, 150, 130, 25, currentBackgroundTemp);
-        
-        tft.setTextSize(3);
-        tft.setTextColor(TFT_WHITE);
-        tft.drawString(String(speed, 1), 200, 155);
-        lastSpeed = speed;
-    }
-}
-
-// 時刻表示
-void drawTime(String timeStr) {
-    if (timeStr != lastTime) {
-        drawTemperatureGradientArea(5, 215, 80, 25, currentBackgroundTemp);  // 幅を100→80に短縮
-        
-        tft.setTextSize(2);
-        tft.setTextColor(TFT_YELLOW);
-        tft.drawString(timeStr, 10, 220);
-        lastTime = timeStr;
-    }
-}
-
-// 日付表示
-void drawDate(String dateStr) {
-    if (dateStr != lastDate) {
-        drawTemperatureGradientArea(90, 215, 130, 25, currentBackgroundTemp);
-        
-        tft.setTextSize(2);
-        tft.setTextColor(TFT_CYAN);
-        tft.drawString(dateStr, 95, 220);
-        lastDate = dateStr;
-    }
-}
 
 
 // UI初期化

@@ -3,7 +3,11 @@
 
 #include <Arduino.h>
 
-// 完全に独立したUI描画機能のみ
+// UI描画・表示機能
 void showSplashScreen();
+void fadeInMainScreen();
+void drawCarBuddyTitle();
+void updateCarBuddyTitle();
+void drawUI();
 
 #endif

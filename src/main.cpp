@@ -1,202 +1,323 @@
+// =================================
+// Car-Buddy シンプルMP3テストシステム
+// GPIO26 DAC + PAM8403
+// =================================
+
 #include <Arduino.h>
+#include <SPIFFS.h>
+#include <Audio.h>  // ESP32-audioI2S ライブラリ
 
-// PAM8403テスト用定義
-#define AUDIO_PIN 26           // GPIO26をPAM8403のLのINに接続
-#define TEST_FREQUENCY 1000    // 1kHzのテスト音
-#define TEST_DURATION 2000     // 2秒間のテスト
+// 現在の配線をそのまま使用
+#define I2S_DOUT  26  // GPIO26 → PAM8403 LのIN（現在の配線）
+#define I2S_BCLK  25  // GPIO25（温度センサーピンを一時的に使用、または未使用）
+#define I2S_LRC   33  // GPIO33（空きピン）
 
-// DAC関連
-#define DAC_RESOLUTION 8       // 8-bit DAC
-#define DAC_MAX_VALUE 255
+// 音声オブジェクト
+Audio audio;
 
-// 音声テスト用変数
+// 音声状態管理
 bool audioInitialized = false;
-unsigned long lastTestTime = 0;
-const unsigned long TEST_INTERVAL = 5000; // 5秒間隔でテスト
+bool isPlaying = false;
+String currentFile = "";
 
-// PAM8403初期化
-bool initPAM8403() {
-  Serial.println("===================");
-  Serial.println("PAM8403 認識テスト開始");
-  Serial.println("===================");
+// 音割れ対策版の初期化
+bool initAudioSystem() {
+  Serial.println("🎵 シンプルMP3システム初期化中...");
   
-  // GPIO26がDAC対応ピンか確認
-  if (AUDIO_PIN != 25 && AUDIO_PIN != 26) {
-    Serial.println("✗ GPIO26はDAC対応ピンではありません");
+  // SPIFFS初期化
+  if (!SPIFFS.begin(true)) {
+    Serial.println("❌ SPIFFS初期化失敗");
     return false;
   }
   
-  // GPIO26をDACピンとして設定
-  dacWrite(AUDIO_PIN, 0);
-  Serial.println("✓ GPIO26 DAC設定成功");
+  Serial.println("✅ SPIFFS初期化成功");
   
-  // 電源供給確認のため、中間レベル出力
-  dacWrite(AUDIO_PIN, DAC_MAX_VALUE / 2);
-  delay(100);
-  dacWrite(AUDIO_PIN, 0);
+  // 音声ファイル一覧表示
+  Serial.println("📁 検出された音声ファイル:");
+  File root = SPIFFS.open("/");
+  File file = root.openNextFile();
+  int mp3Count = 0;
   
-  Serial.println("✓ PAM8403電源供給テスト完了");
+  while (file) {
+    String fileName = String(file.name());
+    if (fileName.endsWith(".mp3")) {
+      Serial.print("  🎵 ");
+      Serial.print(fileName);
+      Serial.print(" (");
+      Serial.print(file.size());
+      Serial.println(" bytes)");
+      mp3Count++;
+    }
+    file = root.openNextFile();
+  }
   
+  if (mp3Count == 0) {
+    Serial.println("⚠️ MP3ファイルが見つかりません");
+    Serial.println("📖 ファイルアップロード方法:");
+    Serial.println("   1. PlatformIOのFile System Uploaderを使用");
+    Serial.println("   2. dataフォルダにMP3ファイルを配置");
+    Serial.println("   3. 'Upload Filesystem Image'を実行");
+    return false;
+  }
+  
+  // I2S音声出力初期化（音割れ対策）
+  Serial.println("🔌 I2S音声出力初期化中...");
+  audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+  
+  // 音割れ対策設定
+  audio.setVolume(5);        // 非常に低い音量から開始（0-21）
+  audio.setTone(-40, -40, -40); // 高音域を下げる
+  audio.forceMono(true);     // モノラル強制（音割れ軽減）
+  
+  Serial.println("✅ シンプルMP3システム初期化完了");
+  Serial.println("⚠️ 音割れ対策: 低音量・モノラル設定");
   audioInitialized = true;
+  
   return true;
 }
 
-// テスト音生成（1kHz正弦波）
-void playTestTone(int frequency, int duration) {
+// 音声ファイル存在確認
+bool checkFile(const String& filename) {
+  String fullPath = filename.startsWith("/") ? filename : "/" + filename;
+  File file = SPIFFS.open(fullPath, "r");
+  if (!file) {
+    Serial.print("❌ ファイルが見つかりません: ");
+    Serial.println(fullPath);
+    return false;
+  }
+  file.close();
+  return true;
+}
+
+// MP3再生（シンプル版）
+bool playMP3Simple(const String& filename) {
   if (!audioInitialized) {
-    Serial.println("✗ 音声未初期化");
+    Serial.println("❌ 音声システムが初期化されていません");
+    return false;
+  }
+  
+  String fullPath = filename.startsWith("/") ? filename : "/" + filename;
+  
+  if (!checkFile(fullPath)) {
+    return false;
+  }
+  
+  // 現在の再生を停止
+  if (isPlaying) {
+    audio.stopSong();
+    delay(100);
+  }
+  
+  Serial.print("🎵 再生開始: ");
+  Serial.println(fullPath);
+  
+  // 新しい音声を再生
+  if (audio.connecttoFS(SPIFFS, fullPath.c_str())) {
+    isPlaying = true;
+    currentFile = fullPath;
+    Serial.println("✅ 再生開始成功");
+    return true;
+  } else {
+    Serial.print("❌ 再生失敗: ");
+    Serial.println(fullPath);
+    return false;
+  }
+}
+
+// 音声停止
+void stopAudio() {
+  if (audioInitialized && isPlaying) {
+    audio.stopSong();
+    isPlaying = false;
+    currentFile = "";
+    Serial.println("⏹️ 音声停止");
+  }
+}
+
+// 音量調整（0-100%）- 音割れ対策版
+void setVolume(int volumePercent) {
+  if (!audioInitialized) return;
+  
+  volumePercent = constrain(volumePercent, 0, 100);
+  
+  // 音割れ対策：最大音量を制限
+  int maxVolume = 15; // 21の約70%に制限
+  int audioVolume = map(volumePercent, 0, 100, 0, maxVolume);
+  audio.setVolume(audioVolume);
+  
+  Serial.print("🔊 音量設定: ");
+  Serial.print(volumePercent);
+  Serial.print("% (実際: ");
+  Serial.print(audioVolume);
+  Serial.print("/21, 制限値: ");
+  Serial.print(maxVolume);
+  Serial.println(")");
+  
+  if (volumePercent > 70) {
+    Serial.println("⚠️ 高音量注意: 音割れの可能性があります");
+  }
+}
+
+// 利用可能ファイル一覧表示
+void listMP3Files() {
+  Serial.println("📋 利用可能なMP3ファイル:");
+  Serial.println("=========================");
+  
+  File root = SPIFFS.open("/");
+  File file = root.openNextFile();
+  int count = 1;
+  
+  while (file) {
+    String fileName = String(file.name());
+    if (fileName.endsWith(".mp3")) {
+      Serial.print(count);
+      Serial.print(". ");
+      Serial.print(fileName);
+      Serial.print(" (");
+      Serial.print(file.size() / 1024);
+      Serial.println(" KB)");
+      count++;
+    }
+    file = root.openNextFile();
+  }
+  
+  if (count == 1) {
+    Serial.println("❌ MP3ファイルがありません");
+  }
+  Serial.println("=========================");
+}
+
+// 音声状態確認
+void checkAudioStatus() {
+  if (!audioInitialized) {
+    Serial.println("❌ 音声システム未初期化");
     return;
   }
   
-  Serial.print("🔊 テスト音再生中... ");
-  Serial.print(frequency);
-  Serial.print("Hz, ");
-  Serial.print(duration);
-  Serial.println("ms");
-  
-  unsigned long startTime = millis();
-  unsigned long sampleCount = 0;
-  
-  // 8kHzサンプリングレートで音声生成
-  const float sampleRate = 8000.0;
-  const float period = sampleRate / frequency;
-  
-  while (millis() - startTime < duration) {
-    // 正弦波生成（0-255範囲）
-    float phase = (sampleCount % (int)period) / period;
-    int sineValue = (sin(2.0 * PI * phase) + 1.0) * 127.5;
-    
-    // DAC出力
-    dacWrite(AUDIO_PIN, sineValue);
-    
-    sampleCount++;
-    
-    // サンプリング間隔調整（125μs = 8kHz）
-    delayMicroseconds(125);
+  Serial.println("📊 音声システム状態:");
+  Serial.print("  再生状態: ");
+  if (isPlaying && audio.isRunning()) {
+    Serial.println("再生中");
+    Serial.print("  現在のファイル: ");
+    Serial.println(currentFile);
+  } else {
+    Serial.println("停止中");
   }
   
-  // 音声停止
-  dacWrite(AUDIO_PIN, DAC_MAX_VALUE / 2);
-  delay(50);
-  dacWrite(AUDIO_PIN, 0);
+  Serial.print("  音量: ");
+  Serial.print(audio.getVolume() * 100 / 21);
+  Serial.println("%");
   
-  Serial.println("✓ テスト音再生完了");
+  Serial.print("  SPIFFSの空き容量: ");
+  Serial.print(SPIFFS.totalBytes() - SPIFFS.usedBytes());
+  Serial.println(" bytes");
 }
 
-// 電源供給確認
-void checkPowerSupply() {
-  Serial.println("🔌 PAM8403電源供給確認");
-  
-  // 段階的に出力レベルを上げて応答確認
-  for (int level = 0; level <= DAC_MAX_VALUE; level += 51) {
-    Serial.print("出力レベル: ");
-    Serial.print(level);
-    Serial.print("/");
-    Serial.println(DAC_MAX_VALUE);
+// 音声システムのメインループ
+void audioLoop() {
+  if (audioInitialized) {
+    audio.loop();
     
-    dacWrite(AUDIO_PIN, level);
-    delay(200);
+    // 再生完了チェック
+    if (isPlaying && !audio.isRunning()) {
+      Serial.println("✅ 再生完了");
+      isPlaying = false;
+      currentFile = "";
+    }
   }
-  
-  // 0に戻す
-  dacWrite(AUDIO_PIN, 0);
-  Serial.println("✓ 電源供給確認完了");
 }
 
-// 詳細ハードウェア情報表示
-void showHardwareInfo() {
-  Serial.println("\n📋 ハードウェア設定情報");
-  Serial.println("========================");
-  Serial.print("ESP32音声出力ピン: GPIO");
-  Serial.println(AUDIO_PIN);
-  Serial.print("DAC解像度: ");
-  Serial.print(DAC_RESOLUTION);
-  Serial.println("-bit");
-  Serial.print("最大DAC値: ");
-  Serial.println(DAC_MAX_VALUE);
-  Serial.println("期待される接続:");
-  Serial.println("  ESP32 GPIO26 → PAM8403 LのIN");
-  Serial.println("  ESP32 5V     → PAM8403 電源+");
-  Serial.println("  ESP32 GND    → PAM8403 電源-");
-  Serial.println("  ESP32 GND    → PAM8403 入力GND");
-  Serial.println("========================\n");
-}
-
+// セットアップ
 void setup() {
   Serial.begin(115200);
   delay(2000);
   
-  Serial.println("\n🎵 PAM8403音声アンプ認識テスト");
-  Serial.println("================================");
+  Serial.println("🎵 Car-Buddy シンプルMP3テストシステム");
+  Serial.println("======================================");
+  Serial.println("現在の配線: GPIO26 → PAM8403 LのIN");
+  Serial.println("");
   
-  // ハードウェア情報表示
-  showHardwareInfo();
-  
-  // PAM8403初期化
-  if (initPAM8403()) {
-    Serial.println("✅ PAM8403初期化成功！");
+  if (initAudioSystem()) {
+    Serial.println("🎉 初期化成功！");
     
-    // 電源供給確認
-    checkPowerSupply();
+    // ファイル一覧表示
+    listMP3Files();
     
-    // 初回テスト音
-    delay(1000);
-    playTestTone(TEST_FREQUENCY, TEST_DURATION);
+    Serial.println("\n📋 利用可能コマンド:");
+    Serial.println("  'list'          - MP3ファイル一覧");
+    Serial.println("  'play filename' - MP3再生 (例: play startup.mp3)");
+    Serial.println("  'stop'          - 再生停止");
+    Serial.println("  'vol XX'        - 音量設定 (0-100)");
+    Serial.println("  'status'        - システム状態確認");
+    Serial.println("  'test'          - 最初のMP3ファイルでテスト");
+    Serial.println("");
+    Serial.println("💡 ヒント: 'test'コマンドで動作確認してください");
     
   } else {
-    Serial.println("❌ PAM8403初期化失敗");
-    Serial.println("配線を確認してください");
+    Serial.println("❌ 初期化失敗");
+    Serial.println("");
+    Serial.println("🔧 トラブルシューティング:");
+    Serial.println("  1. MP3ファイルがSPIFFSにアップロードされているか確認");
+    Serial.println("  2. GPIO26とPAM8403の配線確認");
+    Serial.println("  3. PAM8403の電源供給確認（ESP32の5Vピン）");
   }
-  
-  Serial.println("\n⏰ 定期テスト開始（5秒間隔）");
-  lastTestTime = millis();
 }
 
+// メインループ
 void loop() {
-  // 5秒間隔でテスト音再生
-  if (audioInitialized && (millis() - lastTestTime > TEST_INTERVAL)) {
-    Serial.println("\n--- 定期テスト ---");
-    
-    // 異なる周波数でテスト
-    static int testFrequencies[] = {500, 1000, 1500, 2000};
-    static int freqIndex = 0;
-    
-    int currentFreq = testFrequencies[freqIndex];
-    playTestTone(currentFreq, 1000); // 1秒間
-    
-    freqIndex = (freqIndex + 1) % 4;
-    lastTestTime = millis();
-    
-    // メモリ使用量表示
-    Serial.print("💾 空きメモリ: ");
-    Serial.print(ESP.getFreeHeap());
-    Serial.println(" bytes");
-  }
+  // 音声処理
+  audioLoop();
   
   // シリアルコマンド処理
   if (Serial.available()) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
+    String input = Serial.readStringUntil('\n');
+    input.trim();
     
-    if (command == "test") {
-      Serial.println("🎵 手動テスト実行");
-      playTestTone(1000, 2000);
-    } 
-    else if (command == "power") {
-      checkPowerSupply();
+    if (input == "list") {
+      listMP3Files();
     }
-    else if (command == "info") {
-      showHardwareInfo();
+    else if (input.startsWith("play ")) {
+      String filename = input.substring(5);
+      playMP3Simple(filename);
     }
-    else if (command == "help") {
-      Serial.println("📖 利用可能コマンド:");
-      Serial.println("  test  - テスト音再生");
-      Serial.println("  power - 電源確認");
-      Serial.println("  info  - ハードウェア情報");
-      Serial.println("  help  - このヘルプ");
+    else if (input == "stop") {
+      stopAudio();
     }
-    else {
-      Serial.println("❓ 不明なコマンド。'help'でコマンド一覧を表示");
+    else if (input.startsWith("vol ")) {
+      int volume = input.substring(4).toInt();
+      setVolume(volume);
+    }
+    else if (input == "status") {
+      checkAudioStatus();
+    }
+    else if (input == "test") {
+      // 最初のMP3ファイルでテスト
+      File root = SPIFFS.open("/");
+      File file = root.openNextFile();
+      while (file) {
+        String fileName = String(file.name());
+        if (fileName.endsWith(".mp3")) {
+          Serial.print("🧪 テスト再生: ");
+          Serial.println(fileName);
+          playMP3Simple(fileName);
+          break;
+        }
+        file = root.openNextFile();
+      }
+    }
+    else if (input == "help") {
+      Serial.println("📖 コマンドヘルプ:");
+      Serial.println("  list           - ファイル一覧");
+      Serial.println("  play <file>    - 再生");
+      Serial.println("  stop           - 停止");
+      Serial.println("  vol <0-100>    - 音量");
+      Serial.println("  status         - 状態");
+      Serial.println("  test           - テスト再生");
+    }
+    else if (input.length() > 0) {
+      Serial.println("❓ 不明なコマンド。'help'でヘルプを表示");
     }
   }
+  
+  delay(10);
 }

@@ -1,239 +1,202 @@
 #include <Arduino.h>
-#include <TFT_eSPI.h>
-#include "ui.hpp"
-#include "../include/temperature.hpp"
-#include "../include/speed.hpp"
-#include "../include/time.hpp"
-#include "webserver.hpp"
 
-TFT_eSPI tft = TFT_eSPI();
+// PAM8403テスト用定義
+#define AUDIO_PIN 26           // GPIO26をPAM8403のLのINに接続
+#define TEST_FREQUENCY 1000    // 1kHzのテスト音
+#define TEST_DURATION 2000     // 2秒間のテスト
 
-// マルチコア用タスクハンドル
-TaskHandle_t WiFiTask;
+// DAC関連
+#define DAC_RESOLUTION 8       // 8-bit DAC
+#define DAC_MAX_VALUE 255
 
-// 更新間隔の設定
-const unsigned long TEMP_UPDATE_INTERVAL = 2000;   // 温度: 2秒
-const unsigned long SPEED_UPDATE_INTERVAL = 100;   // 速度: 100ms
-const unsigned long TIME_UPDATE_INTERVAL = 1000;   // 時刻: 1秒
-const unsigned long SERIAL_UPDATE_INTERVAL = 1000; // シリアル出力: 1秒
-const unsigned long BACKGROUND_UPDATE_INTERVAL = 500; // 背景色更新: 500ms（滑らかな変化）
+// 音声テスト用変数
+bool audioInitialized = false;
+unsigned long lastTestTime = 0;
+const unsigned long TEST_INTERVAL = 5000; // 5秒間隔でテスト
 
-unsigned long lastTempUpdate = 0;
-unsigned long lastSpeedUpdate = 0;
-unsigned long lastTimeUpdate = 0;
-unsigned long lastSerialUpdate = 0;
-unsigned long lastBackgroundUpdate = 0;
+// PAM8403初期化
+bool initPAM8403() {
+  Serial.println("===================");
+  Serial.println("PAM8403 認識テスト開始");
+  Serial.println("===================");
+  
+  // GPIO26がDAC対応ピンか確認
+  if (AUDIO_PIN != 25 && AUDIO_PIN != 26) {
+    Serial.println("✗ GPIO26はDAC対応ピンではありません");
+    return false;
+  }
+  
+  // GPIO26をDACピンとして設定
+  dacWrite(AUDIO_PIN, 0);
+  Serial.println("✓ GPIO26 DAC設定成功");
+  
+  // 電源供給確認のため、中間レベル出力
+  dacWrite(AUDIO_PIN, DAC_MAX_VALUE / 2);
+  delay(100);
+  dacWrite(AUDIO_PIN, 0);
+  
+  Serial.println("✓ PAM8403電源供給テスト完了");
+  
+  audioInitialized = true;
+  return true;
+}
 
-// 温度連動背景色用の変数
-static float lastDisplayedBackgroundTemp = 20.0;
-
-// WiFi専用タスク（Core 0で実行）
-void WiFiTaskCode(void * pvParameters) {
-    Serial.println("WiFi Task started on Core 0");
+// テスト音生成（1kHz正弦波）
+void playTestTone(int frequency, int duration) {
+  if (!audioInitialized) {
+    Serial.println("✗ 音声未初期化");
+    return;
+  }
+  
+  Serial.print("🔊 テスト音再生中... ");
+  Serial.print(frequency);
+  Serial.print("Hz, ");
+  Serial.print(duration);
+  Serial.println("ms");
+  
+  unsigned long startTime = millis();
+  unsigned long sampleCount = 0;
+  
+  // 8kHzサンプリングレートで音声生成
+  const float sampleRate = 8000.0;
+  const float period = sampleRate / frequency;
+  
+  while (millis() - startTime < duration) {
+    // 正弦波生成（0-255範囲）
+    float phase = (sampleCount % (int)period) / period;
+    int sineValue = (sin(2.0 * PI * phase) + 1.0) * 127.5;
     
-    for(;;) {
-        // Webサーバー処理
-        handleWebServerClient();
-        
-        // WiFi接続クライアント数を定期チェック
-        static unsigned long lastClientCheck = 0;
-        if (millis() - lastClientCheck > 10000) {  // 10秒ごと
-            int clients = getConnectedClientCount();
-            if (clients > 0) {
-                Serial.print("WiFi clients connected: ");
-                Serial.println(clients);
-            }
-            lastClientCheck = millis();
-        }
-        
-        vTaskDelay(1);  // 1ms待機（他タスクにCPU譲る）
-    }
+    // DAC出力
+    dacWrite(AUDIO_PIN, sineValue);
+    
+    sampleCount++;
+    
+    // サンプリング間隔調整（125μs = 8kHz）
+    delayMicroseconds(125);
+  }
+  
+  // 音声停止
+  dacWrite(AUDIO_PIN, DAC_MAX_VALUE / 2);
+  delay(50);
+  dacWrite(AUDIO_PIN, 0);
+  
+  Serial.println("✓ テスト音再生完了");
+}
+
+// 電源供給確認
+void checkPowerSupply() {
+  Serial.println("🔌 PAM8403電源供給確認");
+  
+  // 段階的に出力レベルを上げて応答確認
+  for (int level = 0; level <= DAC_MAX_VALUE; level += 51) {
+    Serial.print("出力レベル: ");
+    Serial.print(level);
+    Serial.print("/");
+    Serial.println(DAC_MAX_VALUE);
+    
+    dacWrite(AUDIO_PIN, level);
+    delay(200);
+  }
+  
+  // 0に戻す
+  dacWrite(AUDIO_PIN, 0);
+  Serial.println("✓ 電源供給確認完了");
+}
+
+// 詳細ハードウェア情報表示
+void showHardwareInfo() {
+  Serial.println("\n📋 ハードウェア設定情報");
+  Serial.println("========================");
+  Serial.print("ESP32音声出力ピン: GPIO");
+  Serial.println(AUDIO_PIN);
+  Serial.print("DAC解像度: ");
+  Serial.print(DAC_RESOLUTION);
+  Serial.println("-bit");
+  Serial.print("最大DAC値: ");
+  Serial.println(DAC_MAX_VALUE);
+  Serial.println("期待される接続:");
+  Serial.println("  ESP32 GPIO26 → PAM8403 LのIN");
+  Serial.println("  ESP32 5V     → PAM8403 電源+");
+  Serial.println("  ESP32 GND    → PAM8403 電源-");
+  Serial.println("  ESP32 GND    → PAM8403 入力GND");
+  Serial.println("========================\n");
 }
 
 void setup() {
-    Serial.begin(115200);
+  Serial.begin(115200);
+  delay(2000);
+  
+  Serial.println("\n🎵 PAM8403音声アンプ認識テスト");
+  Serial.println("================================");
+  
+  // ハードウェア情報表示
+  showHardwareInfo();
+  
+  // PAM8403初期化
+  if (initPAM8403()) {
+    Serial.println("✅ PAM8403初期化成功！");
+    
+    // 電源供給確認
+    checkPowerSupply();
+    
+    // 初回テスト音
     delay(1000);
-    Serial.println("=== Starting CarBuddy - Temperature Reactive Version with Title ===");
-
-    // Webサーバー初期化（WiFiスタック含む）
-    initWebServer();
+    playTestTone(TEST_FREQUENCY, TEST_DURATION);
     
-    // WiFi専用タスクをCore 0で起動
-    xTaskCreatePinnedToCore(
-        WiFiTaskCode,   // タスク関数
-        "WiFiTask",     // タスク名
-        10000,          // スタックサイズ
-        NULL,           // パラメータ
-        2,              // 優先度（高め）
-        &WiFiTask,      // タスクハンドル
-        0               // Core 0で実行
-    );
-    
-    Serial.println("WiFi task created on Core 0");
-    delay(500);  // WiFiタスク起動待機
-
-    // TFT初期化
-    tft.init();
-    tft.setRotation(1);
-    Serial.print("TFT size: ");
-    Serial.print(tft.width());
-    Serial.print(" x ");
-    Serial.println(tft.height());
-
-    // 各種センサー初期化
-    initTemperatureSensor();
-    initSpeedSensor();
-    initTimeSystem();
-
-    Serial.println("=== Sensors initialized ===");
-
-    // スプラッシュ画面表示
-    showSplashScreen();
-    
-    // メイン画面初期化
-    drawUI();
-    
-    Serial.println("=== Setup completed - Starting main loop ===");
+  } else {
+    Serial.println("❌ PAM8403初期化失敗");
+    Serial.println("配線を確認してください");
+  }
+  
+  Serial.println("\n⏰ 定期テスト開始（5秒間隔）");
+  lastTestTime = millis();
 }
 
 void loop() {
-    unsigned long currentTime = millis();
+  // 5秒間隔でテスト音再生
+  if (audioInitialized && (millis() - lastTestTime > TEST_INTERVAL)) {
+    Serial.println("\n--- 定期テスト ---");
     
-    // === 温度更新 ===
-    if (currentTime - lastTempUpdate >= TEMP_UPDATE_INTERVAL) {
-        float currentTemp = getTemperature();
-        updateBackgroundTemperature(currentTemp);
-        
-        // 背景色の大幅変化をチェック
-        if (abs(currentTemp - lastDisplayedBackgroundTemp) > 1.0) {
-            String colorMode;
-            if (currentTemp >= 35.0) {
-                colorMode = "RED (Hot)";
-            } else if (currentTemp >= 30.0) {
-                colorMode = "BLUE→RED (Transition)";
-            } else {
-                colorMode = "BLUE (Cool)";
-            }
-            
-            Serial.print("Background color update: ");
-            Serial.print(lastDisplayedBackgroundTemp, 1);
-            Serial.print("°C → ");
-            Serial.print(currentTemp, 1);
-            Serial.print("°C → ");
-            Serial.println(colorMode);
-            
-            // === 背景とすべての要素を同期描画（ラグ解消） ===
-            
-            // 1. 現在値を事前に取得
-            float currentSpeed = getSpeed();
-            String currentTimeStr = getCurrentTime();
-            String currentDateStr = getCurrentDate();
-            
-            // 2. 全画面背景を更新
-            drawTemperatureGradientBackground(currentTemp);
-            
-            // 3. すぐに全ての要素を描画（ラグなし）
-            
-            // CarBuddyタイトル（キャラクター上部空白に）
-            tft.setTextColor(TFT_WHITE);
-            tft.setTextSize(2);
-            tft.drawString("CarBuddy", 25, 8);
-            
-            // UI固定ラベル（元の位置に戻す）
-            tft.setTextSize(3);
-            tft.drawString("Temp:", 200, 10);     // 元の位置に戻す
-            tft.drawString("Speed:", 200, 130);
-            tft.drawString("km/h", 240, 180);     // 元の位置に戻す
-            
-            // 温度表示（文字色判定付き）
-            uint16_t tempTextColor = TFT_WHITE;
-            if (currentTemp >= 32.0) {
-                tempTextColor = TFT_YELLOW;
-            }
-            tft.setTextSize(3);
-            tft.setTextColor(tempTextColor);
-            tft.drawString(String(currentTemp, 1) + " C", 200, 35);  // 元の位置に戻す
-            
-            // 速度表示
-            tft.setTextSize(3);
-            tft.setTextColor(TFT_WHITE);
-            tft.drawString(String(abs(currentSpeed), 1), 200, 155);  // 元の位置に戻す
-            
-            // 時刻表示
-            tft.setTextSize(2);
-            tft.setTextColor(TFT_YELLOW);
-            tft.drawString(currentTimeStr, 10, 220);
-            
-            // 日付表示（位置調整）
-            tft.setTextSize(2);
-            tft.setTextColor(TFT_CYAN);
-            tft.drawString(currentDateStr, 95, 220);  // X座標を100→95に調整
-            
-            // キャラクター描画（元の位置に戻す）
-            drawCharacterImageWithEdgeFade(10, 30);  // 元の位置に戻す
-            
-            // 4. 前回値を更新
-            forceUpdateAllDisplayValues();
-            setLastDisplayValues(currentTemp, currentSpeed, currentTimeStr, currentDateStr);
-            
-            lastDisplayedBackgroundTemp = currentTemp;
-        } else {
-            // 通常の差分描画
-            drawTemperature(currentTemp);
-        }
-        
-        lastTempUpdate = currentTime;
+    // 異なる周波数でテスト
+    static int testFrequencies[] = {500, 1000, 1500, 2000};
+    static int freqIndex = 0;
+    
+    int currentFreq = testFrequencies[freqIndex];
+    playTestTone(currentFreq, 1000); // 1秒間
+    
+    freqIndex = (freqIndex + 1) % 4;
+    lastTestTime = millis();
+    
+    // メモリ使用量表示
+    Serial.print("💾 空きメモリ: ");
+    Serial.print(ESP.getFreeHeap());
+    Serial.println(" bytes");
+  }
+  
+  // シリアルコマンド処理
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+    
+    if (command == "test") {
+      Serial.println("🎵 手動テスト実行");
+      playTestTone(1000, 2000);
+    } 
+    else if (command == "power") {
+      checkPowerSupply();
     }
-
-    // === 背景色更新チェック（温度以外での変化も検出） ===
-    if (currentTime - lastBackgroundUpdate >= BACKGROUND_UPDATE_INTERVAL) {
-        float currentTemp = getTemperature();
-        
-        // 小さな温度変化でも定期的に背景色更新をチェック
-        if (abs(currentTemp - lastDisplayedBackgroundTemp) > 0.5) {
-            updateBackgroundTemperature(currentTemp);
-            forceFullRedraw(currentTemp);
-            lastDisplayedBackgroundTemp = currentTemp;
-        }
-        
-        lastBackgroundUpdate = currentTime;
+    else if (command == "info") {
+      showHardwareInfo();
     }
-
-    // === 速度更新 ===
-    if (currentTime - lastSpeedUpdate >= SPEED_UPDATE_INTERVAL) {
-        drawSpeed(getSpeed());
-        lastSpeedUpdate = currentTime;
+    else if (command == "help") {
+      Serial.println("📖 利用可能コマンド:");
+      Serial.println("  test  - テスト音再生");
+      Serial.println("  power - 電源確認");
+      Serial.println("  info  - ハードウェア情報");
+      Serial.println("  help  - このヘルプ");
     }
-
-    // === 時刻更新 ===
-    if (currentTime - lastTimeUpdate >= TIME_UPDATE_INTERVAL) {
-        drawTime(getCurrentTime());
-        drawDate(getCurrentDate());
-        lastTimeUpdate = currentTime;
+    else {
+      Serial.println("❓ 不明なコマンド。'help'でコマンド一覧を表示");
     }
-
-
-    // === シリアルデバッグ出力 ===
-    if (currentTime - lastSerialUpdate >= SERIAL_UPDATE_INTERVAL) {
-        float temp = getTemperature();
-        float speed = getSpeed();
-        String timeStr = getCurrentTime();
-        String dateStr = getCurrentDate();
-        
-        Serial.print("Temp: ");
-        Serial.print(temp, 1);
-        Serial.print("°C, Speed: ");
-        Serial.print(speed, 1);
-        Serial.print(" km/h, Time: ");
-        Serial.print(timeStr);
-        Serial.print(", Date: ");
-        Serial.print(dateStr);
-        Serial.print(", WiFi clients: ");
-        Serial.println(getConnectedClientCount());
-        
-        lastSerialUpdate = currentTime;
-    }
-
-    // 少し待機してCPU負荷を軽減
-    delay(10);
+  }
 }

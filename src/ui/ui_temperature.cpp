@@ -83,15 +83,6 @@ void updateBackgroundTemperature(float temp) {
     currentBackgroundTemp = temp;
 }
 
-// 後方互換性のための関数
-void drawGradientBackground() {
-    drawTemperatureGradientBackground(currentBackgroundTemp);
-}
-
-void drawGradientArea(int x, int y, int width, int height) {
-    drawTemperatureGradientArea(x, y, width, height, currentBackgroundTemp);
-}
-
 // 現在の背景温度取得
 float getCurrentBackgroundTemp() {
     return currentBackgroundTemp;

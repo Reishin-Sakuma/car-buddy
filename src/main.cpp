@@ -1,323 +1,316 @@
-// =================================
-// Car-Buddy シンプルMP3テストシステム
-// GPIO26 DAC + PAM8403
-// =================================
-
 #include <Arduino.h>
 #include <SPIFFS.h>
-#include <Audio.h>  // ESP32-audioI2S ライブラリ
+#include <driver/i2s.h>
+#include <driver/dac.h>
 
-// 現在の配線をそのまま使用
-#define I2S_DOUT  26  // GPIO26 → PAM8403 LのIN（現在の配線）
-#define I2S_BCLK  25  // GPIO25（温度センサーピンを一時的に使用、または未使用）
-#define I2S_LRC   33  // GPIO33（空きピン）
+// I2S設定（内蔵DAC使用）
+#define I2S_NUM I2S_NUM_0
+#define I2S_BCK_PIN 26  // 未使用（内蔵DACの場合）
+#define I2S_WS_PIN 25   // 未使用（内蔵DACの場合）
+#define I2S_DATA_PIN 26 // GPIO26 (DAC2)
 
-// 音声オブジェクト
-Audio audio;
+// バッファサイズ
+#define BUFFER_SIZE 512
 
-// 音声状態管理
-bool audioInitialized = false;
-bool isPlaying = false;
-String currentFile = "";
+// WAVヘッダー構造体
+struct WAVHeader {
+    char riff[4];
+    uint32_t size;
+    char wave[4];
+    char fmt[4];
+    uint32_t fmt_size;
+    uint16_t format;
+    uint16_t channels;
+    uint32_t sample_rate;
+    uint32_t byte_rate;
+    uint16_t block_align;
+    uint16_t bits_per_sample;
+    char data[4];
+    uint32_t data_size;
+};
 
-// 音割れ対策版の初期化
-bool initAudioSystem() {
-  Serial.println("🎵 シンプルMP3システム初期化中...");
-  
-  // SPIFFS初期化
-  if (!SPIFFS.begin(true)) {
-    Serial.println("❌ SPIFFS初期化失敗");
-    return false;
-  }
-  
-  Serial.println("✅ SPIFFS初期化成功");
-  
-  // 音声ファイル一覧表示
-  Serial.println("📁 検出された音声ファイル:");
-  File root = SPIFFS.open("/");
-  File file = root.openNextFile();
-  int mp3Count = 0;
-  
-  while (file) {
-    String fileName = String(file.name());
-    if (fileName.endsWith(".mp3")) {
-      Serial.print("  🎵 ");
-      Serial.print(fileName);
-      Serial.print(" (");
-      Serial.print(file.size());
-      Serial.println(" bytes)");
-      mp3Count++;
+File wavFile;
+uint8_t buffer[BUFFER_SIZE];
+WAVHeader wavHeader;
+
+// ボリューム制御用（0-100）
+int volumePercent = 50;  // デフォルト50%
+
+// I2S初期化（内蔵DAC使用）
+void setupI2S() {
+    // DACを有効化
+    dac_output_enable(DAC_CHANNEL_2);  // GPIO26
+    
+    i2s_config_t i2s_config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN),
+        .sample_rate = 44100,  // 初期値（WAVファイルに応じて変更）
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,  // モノラル出力
+        .communication_format = I2S_COMM_FORMAT_STAND_MSB,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count = 8,
+        .dma_buf_len = 256,
+        .use_apll = false,
+        .tx_desc_auto_clear = true,
+        .fixed_mclk = 0
+    };
+
+    i2s_driver_install(I2S_NUM, &i2s_config, 0, NULL);
+    i2s_set_dac_mode(I2S_DAC_CHANNEL_LEFT_EN);  // GPIO26のみ有効化
+}
+
+// WAVヘッダー読み込み
+bool readWAVHeader(File &file) {
+    if (file.read((uint8_t*)&wavHeader, sizeof(WAVHeader)) != sizeof(WAVHeader)) {
+        return false;
     }
-    file = root.openNextFile();
-  }
-  
-  if (mp3Count == 0) {
-    Serial.println("⚠️ MP3ファイルが見つかりません");
-    Serial.println("📖 ファイルアップロード方法:");
-    Serial.println("   1. PlatformIOのFile System Uploaderを使用");
-    Serial.println("   2. dataフォルダにMP3ファイルを配置");
-    Serial.println("   3. 'Upload Filesystem Image'を実行");
-    return false;
-  }
-  
-  // I2S音声出力初期化（音割れ対策）
-  Serial.println("🔌 I2S音声出力初期化中...");
-  audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
-  
-  // 音割れ対策設定
-  audio.setVolume(5);        // 非常に低い音量から開始（0-21）
-  audio.setTone(-40, -40, -40); // 高音域を下げる
-  audio.forceMono(true);     // モノラル強制（音割れ軽減）
-  
-  Serial.println("✅ シンプルMP3システム初期化完了");
-  Serial.println("⚠️ 音割れ対策: 低音量・モノラル設定");
-  audioInitialized = true;
-  
-  return true;
-}
 
-// 音声ファイル存在確認
-bool checkFile(const String& filename) {
-  String fullPath = filename.startsWith("/") ? filename : "/" + filename;
-  File file = SPIFFS.open(fullPath, "r");
-  if (!file) {
-    Serial.print("❌ ファイルが見つかりません: ");
-    Serial.println(fullPath);
-    return false;
-  }
-  file.close();
-  return true;
-}
+    // WAVファイルの検証
+    if (memcmp(wavHeader.riff, "RIFF", 4) != 0 || 
+        memcmp(wavHeader.wave, "WAVE", 4) != 0 ||
+        memcmp(wavHeader.fmt, "fmt ", 4) != 0) {
+        Serial.println("無効なWAVファイルです");
+        return false;
+    }
 
-// MP3再生（シンプル版）
-bool playMP3Simple(const String& filename) {
-  if (!audioInitialized) {
-    Serial.println("❌ 音声システムが初期化されていません");
-    return false;
-  }
-  
-  String fullPath = filename.startsWith("/") ? filename : "/" + filename;
-  
-  if (!checkFile(fullPath)) {
-    return false;
-  }
-  
-  // 現在の再生を停止
-  if (isPlaying) {
-    audio.stopSong();
-    delay(100);
-  }
-  
-  Serial.print("🎵 再生開始: ");
-  Serial.println(fullPath);
-  
-  // 新しい音声を再生
-  if (audio.connecttoFS(SPIFFS, fullPath.c_str())) {
-    isPlaying = true;
-    currentFile = fullPath;
-    Serial.println("✅ 再生開始成功");
+    Serial.println("WAVファイル情報:");
+    Serial.printf("  サンプルレート: %d Hz\n", wavHeader.sample_rate);
+    Serial.printf("  チャンネル数: %d\n", wavHeader.channels);
+    Serial.printf("  ビット深度: %d bit\n", wavHeader.bits_per_sample);
+    Serial.printf("  データサイズ: %d bytes\n", wavHeader.data_size);
+
+    // I2Sサンプルレートを設定
+    i2s_set_sample_rates(I2S_NUM, wavHeader.sample_rate);
+
     return true;
-  } else {
-    Serial.print("❌ 再生失敗: ");
-    Serial.println(fullPath);
-    return false;
-  }
 }
 
-// 音声停止
-void stopAudio() {
-  if (audioInitialized && isPlaying) {
-    audio.stopSong();
-    isPlaying = false;
-    currentFile = "";
-    Serial.println("⏹️ 音声停止");
-  }
-}
-
-// 音量調整（0-100%）- 音割れ対策版
-void setVolume(int volumePercent) {
-  if (!audioInitialized) return;
-  
-  volumePercent = constrain(volumePercent, 0, 100);
-  
-  // 音割れ対策：最大音量を制限
-  int maxVolume = 15; // 21の約70%に制限
-  int audioVolume = map(volumePercent, 0, 100, 0, maxVolume);
-  audio.setVolume(audioVolume);
-  
-  Serial.print("🔊 音量設定: ");
-  Serial.print(volumePercent);
-  Serial.print("% (実際: ");
-  Serial.print(audioVolume);
-  Serial.print("/21, 制限値: ");
-  Serial.print(maxVolume);
-  Serial.println(")");
-  
-  if (volumePercent > 70) {
-    Serial.println("⚠️ 高音量注意: 音割れの可能性があります");
-  }
-}
-
-// 利用可能ファイル一覧表示
-void listMP3Files() {
-  Serial.println("📋 利用可能なMP3ファイル:");
-  Serial.println("=========================");
-  
-  File root = SPIFFS.open("/");
-  File file = root.openNextFile();
-  int count = 1;
-  
-  while (file) {
-    String fileName = String(file.name());
-    if (fileName.endsWith(".mp3")) {
-      Serial.print(count);
-      Serial.print(". ");
-      Serial.print(fileName);
-      Serial.print(" (");
-      Serial.print(file.size() / 1024);
-      Serial.println(" KB)");
-      count++;
-    }
-    file = root.openNextFile();
-  }
-  
-  if (count == 1) {
-    Serial.println("❌ MP3ファイルがありません");
-  }
-  Serial.println("=========================");
-}
-
-// 音声状態確認
-void checkAudioStatus() {
-  if (!audioInitialized) {
-    Serial.println("❌ 音声システム未初期化");
-    return;
-  }
-  
-  Serial.println("📊 音声システム状態:");
-  Serial.print("  再生状態: ");
-  if (isPlaying && audio.isRunning()) {
-    Serial.println("再生中");
-    Serial.print("  現在のファイル: ");
-    Serial.println(currentFile);
-  } else {
-    Serial.println("停止中");
-  }
-  
-  Serial.print("  音量: ");
-  Serial.print(audio.getVolume() * 100 / 21);
-  Serial.println("%");
-  
-  Serial.print("  SPIFFSの空き容量: ");
-  Serial.print(SPIFFS.totalBytes() - SPIFFS.usedBytes());
-  Serial.println(" bytes");
-}
-
-// 音声システムのメインループ
-void audioLoop() {
-  if (audioInitialized) {
-    audio.loop();
+// 16ビットサンプルにボリューム適用（クリッピング防止付き）
+int16_t applyVolume16(int16_t sample) {
+    // ボリューム適用（0-100% → 0.0-1.0）
+    float volumeFactor = volumePercent / 100.0f;
     
-    // 再生完了チェック
-    if (isPlaying && !audio.isRunning()) {
-      Serial.println("✅ 再生完了");
-      isPlaying = false;
-      currentFile = "";
-    }
-  }
+    // さらに全体的な音量を下げる（DAC出力の歪み防止）
+    volumeFactor *= 0.7f;  // 最大70%に制限
+    
+    int32_t result = (int32_t)(sample * volumeFactor);
+    
+    // クリッピング防止
+    if (result > 32767) result = 32767;
+    if (result < -32768) result = -32768;
+    
+    return (int16_t)result;
 }
 
-// セットアップ
+// 8ビットサンプルを16ビットに変換してボリューム適用
+int16_t convert8to16WithVolume(uint8_t sample8) {
+    // 8ビット（0-255）を16ビット（-32768 to 32767）に変換
+    int16_t sample16 = ((int16_t)sample8 - 128) * 256;
+    return applyVolume16(sample16);
+}
+
+// WAVファイル再生
+void playWAV(const char* filename) {
+    wavFile = SPIFFS.open(filename);
+    if (!wavFile) {
+        Serial.printf("ファイルを開けません: %s\n", filename);
+        return;
+    }
+
+    Serial.printf("再生開始: %s (サイズ: %d bytes)\n", filename, wavFile.size());
+    Serial.printf("現在のボリューム: %d%%\n", volumePercent);
+
+    if (!readWAVHeader(wavFile)) {
+        wavFile.close();
+        return;
+    }
+
+    // データ部分まで移動
+    wavFile.seek(44);  // 標準的なWAVヘッダーサイズ
+
+    size_t bytes_written;
+    uint32_t bytes_read;
+    uint8_t tempBuffer[BUFFER_SIZE];
+    
+    while (wavFile.available()) {
+        bytes_read = wavFile.read(tempBuffer, BUFFER_SIZE);
+        
+        if (bytes_read > 0) {
+            size_t outputSize = 0;
+            
+            // 8ビットWAVの処理
+            if (wavHeader.bits_per_sample == 8) {
+                // モノラル8ビット
+                if (wavHeader.channels == 1) {
+                    for (int i = 0; i < bytes_read; i++) {
+                        int16_t sample = convert8to16WithVolume(tempBuffer[i]);
+                        buffer[outputSize++] = sample & 0xFF;
+                        buffer[outputSize++] = (sample >> 8) & 0xFF;
+                    }
+                }
+                // ステレオ8ビット
+                else if (wavHeader.channels == 2) {
+                    for (int i = 0; i < bytes_read; i += 2) {
+                        int16_t left = convert8to16WithVolume(tempBuffer[i]);
+                        int16_t right = convert8to16WithVolume(tempBuffer[i + 1]);
+                        int16_t mono = (left + right) / 2;
+                        buffer[outputSize++] = mono & 0xFF;
+                        buffer[outputSize++] = (mono >> 8) & 0xFF;
+                    }
+                }
+            }
+            // 16ビットWAVの処理
+            else if (wavHeader.bits_per_sample == 16) {
+                // モノラル16ビット
+                if (wavHeader.channels == 1) {
+                    for (int i = 0; i < bytes_read; i += 2) {
+                        int16_t sample = tempBuffer[i] | (tempBuffer[i + 1] << 8);
+                        sample = applyVolume16(sample);
+                        buffer[outputSize++] = sample & 0xFF;
+                        buffer[outputSize++] = (sample >> 8) & 0xFF;
+                    }
+                }
+                // ステレオ16ビット
+                else if (wavHeader.channels == 2) {
+                    for (int i = 0; i < bytes_read; i += 4) {
+                        int16_t left = tempBuffer[i] | (tempBuffer[i + 1] << 8);
+                        int16_t right = tempBuffer[i + 2] | (tempBuffer[i + 3] << 8);
+                        left = applyVolume16(left);
+                        right = applyVolume16(right);
+                        int16_t mono = (left + right) / 2;
+                        buffer[outputSize++] = mono & 0xFF;
+                        buffer[outputSize++] = (mono >> 8) & 0xFF;
+                    }
+                }
+            }
+
+            // I2Sに書き込み
+            i2s_write(I2S_NUM, buffer, outputSize, &bytes_written, portMAX_DELAY);
+        }
+    }
+
+    // 再生終了時にDACをクリア
+    i2s_zero_dma_buffer(I2S_NUM);
+    
+    wavFile.close();
+    Serial.println("再生終了");
+}
+
 void setup() {
-  Serial.begin(115200);
-  delay(2000);
-  
-  Serial.println("🎵 Car-Buddy シンプルMP3テストシステム");
-  Serial.println("======================================");
-  Serial.println("現在の配線: GPIO26 → PAM8403 LのIN");
-  Serial.println("");
-  
-  if (initAudioSystem()) {
-    Serial.println("🎉 初期化成功！");
+    Serial.begin(115200);
+    delay(1000);
     
-    // ファイル一覧表示
-    listMP3Files();
-    
-    Serial.println("\n📋 利用可能コマンド:");
-    Serial.println("  'list'          - MP3ファイル一覧");
-    Serial.println("  'play filename' - MP3再生 (例: play startup.mp3)");
-    Serial.println("  'stop'          - 再生停止");
-    Serial.println("  'vol XX'        - 音量設定 (0-100)");
-    Serial.println("  'status'        - システム状態確認");
-    Serial.println("  'test'          - 最初のMP3ファイルでテスト");
-    Serial.println("");
-    Serial.println("💡 ヒント: 'test'コマンドで動作確認してください");
-    
-  } else {
-    Serial.println("❌ 初期化失敗");
-    Serial.println("");
-    Serial.println("🔧 トラブルシューティング:");
-    Serial.println("  1. MP3ファイルがSPIFFSにアップロードされているか確認");
-    Serial.println("  2. GPIO26とPAM8403の配線確認");
-    Serial.println("  3. PAM8403の電源供給確認（ESP32の5Vピン）");
-  }
-}
+    Serial.println("SPIFFS WAV再生テスト開始（改良版）");
 
-// メインループ
-void loop() {
-  // 音声処理
-  audioLoop();
-  
-  // シリアルコマンド処理
-  if (Serial.available()) {
-    String input = Serial.readStringUntil('\n');
-    input.trim();
-    
-    if (input == "list") {
-      listMP3Files();
+    // SPIFFS初期化
+    if (!SPIFFS.begin(true)) {
+        Serial.println("SPIFFS初期化失敗");
+        return;
     }
-    else if (input.startsWith("play ")) {
-      String filename = input.substring(5);
-      playMP3Simple(filename);
-    }
-    else if (input == "stop") {
-      stopAudio();
-    }
-    else if (input.startsWith("vol ")) {
-      int volume = input.substring(4).toInt();
-      setVolume(volume);
-    }
-    else if (input == "status") {
-      checkAudioStatus();
-    }
-    else if (input == "test") {
-      // 最初のMP3ファイルでテスト
-      File root = SPIFFS.open("/");
-      File file = root.openNextFile();
-      while (file) {
-        String fileName = String(file.name());
-        if (fileName.endsWith(".mp3")) {
-          Serial.print("🧪 テスト再生: ");
-          Serial.println(fileName);
-          playMP3Simple(fileName);
-          break;
+    Serial.println("SPIFFS初期化成功");
+
+    // SPIFFS情報表示
+    Serial.printf("SPIFFS総容量: %d bytes\n", SPIFFS.totalBytes());
+    Serial.printf("SPIFFS使用量: %d bytes\n", SPIFFS.usedBytes());
+    Serial.printf("SPIFFS空き容量: %d bytes\n", SPIFFS.totalBytes() - SPIFFS.usedBytes());
+
+    // I2S初期化
+    setupI2S();
+    Serial.println("I2S初期化完了");
+
+    // 初期ボリューム設定
+    Serial.printf("初期ボリューム: %d%%\n", volumePercent);
+
+    // ルートディレクトリのWAVファイルをリスト表示
+    File root = SPIFFS.open("/");
+    File file = root.openNextFile();
+    Serial.println("\nWAVファイル一覧:");
+    while (file) {
+        String filename = file.name();
+        if (filename.endsWith(".wav") || filename.endsWith(".WAV")) {
+            Serial.printf("  %s (%d bytes)\n", file.name(), file.size());
         }
         file = root.openNextFile();
-      }
     }
-    else if (input == "help") {
-      Serial.println("📖 コマンドヘルプ:");
-      Serial.println("  list           - ファイル一覧");
-      Serial.println("  play <file>    - 再生");
-      Serial.println("  stop           - 停止");
-      Serial.println("  vol <0-100>    - 音量");
-      Serial.println("  status         - 状態");
-      Serial.println("  test           - テスト再生");
+    root.close();
+
+    Serial.println("\n使用方法:");
+    Serial.println("- シリアルモニタからファイル名を入力して再生");
+    Serial.println("- 'list' でファイル一覧表示");
+    Serial.println("- 'vol XX' で音量設定 (0-100)");
+    Serial.println("- 'test' でボリュームテスト（ビープ音）");
+}
+
+// 簡単なビープ音生成（ボリュームテスト用）
+void playBeep(int frequency, int duration) {
+    Serial.printf("ビープ音再生: %dHz, %dms, 音量%d%%\n", frequency, duration, volumePercent);
+    
+    const int sampleRate = 22050;
+    const int samples = (sampleRate * duration) / 1000;
+    const float volumeFactor = (volumePercent / 100.0f) * 0.7f;
+    
+    i2s_set_sample_rates(I2S_NUM, sampleRate);
+    
+    uint8_t beepBuffer[512];
+    size_t bytes_written;
+    
+    for (int i = 0; i < samples; i += 256) {
+        for (int j = 0; j < 256 && (i + j) < samples; j++) {
+            float angle = 2.0f * PI * frequency * (i + j) / sampleRate;
+            int16_t sample = (int16_t)(sin(angle) * 32767 * volumeFactor);
+            beepBuffer[j * 2] = sample & 0xFF;
+            beepBuffer[j * 2 + 1] = (sample >> 8) & 0xFF;
+        }
+        i2s_write(I2S_NUM, beepBuffer, 512, &bytes_written, portMAX_DELAY);
     }
-    else if (input.length() > 0) {
-      Serial.println("❓ 不明なコマンド。'help'でヘルプを表示");
+    
+    i2s_zero_dma_buffer(I2S_NUM);
+}
+
+void loop() {
+    if (Serial.available()) {
+        String command = Serial.readStringUntil('\n');
+        command.trim();
+        
+        if (command.length() > 0) {
+            if (command == "list") {
+                // ファイル一覧表示
+                File root = SPIFFS.open("/");
+                File file = root.openNextFile();
+                Serial.println("\nWAVファイル一覧:");
+                while (file) {
+                    String filename = file.name();
+                    if (filename.endsWith(".wav") || filename.endsWith(".WAV")) {
+                        Serial.printf("  %s (%d bytes)\n", file.name(), file.size());
+                    }
+                    file = root.openNextFile();
+                }
+                root.close();
+            } else if (command.startsWith("vol ")) {
+                // ボリューム設定
+                int vol = command.substring(4).toInt();
+                if (vol >= 0 && vol <= 100) {
+                    volumePercent = vol;
+                    Serial.printf("ボリューム設定: %d%%\n", volumePercent);
+                } else {
+                    Serial.println("ボリュームは0-100の範囲で指定してください");
+                }
+            } else if (command == "test") {
+                // ボリュームテスト用ビープ音
+                playBeep(1000, 500);  // 1kHz, 500ms
+            } else {
+                // ファイル再生
+                if (!command.startsWith("/")) {
+                    command = "/" + command;
+                }
+                if (!command.endsWith(".wav") && !command.endsWith(".WAV")) {
+                    command += ".wav";
+                }
+                
+                playWAV(command.c_str());
+            }
+        }
     }
-  }
-  
-  delay(10);
+    
+    delay(100);
 }

@@ -1,15 +1,18 @@
-#ifndef TIME_H
-#define TIME_H
+#pragma once
 
 #include <Arduino.h>
 
-// 時刻管理モジュール
+// 時刻システム初期化
 void initTimeSystem();
+
+// 時刻の保存・復元
 void saveCurrentTime();
 void restoreTimeFromEEPROM();
-String getCurrentTimeString();
-String getCurrentTime();    // HH:MM形式
-String getCurrentDate();    // MM/DD形式
-bool isTimeValid();
 
-#endif
+// 時刻取得関数（タイムアウト設定済み）
+String getCurrentTimeString();
+String getCurrentTime();
+String getCurrentDate();
+
+// 時刻有効性チェック
+bool isTimeValid();

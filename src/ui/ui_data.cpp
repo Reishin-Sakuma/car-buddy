@@ -58,14 +58,13 @@ void drawSpeed(float speed) {
         Serial.println(speed);
     }
 }
-
-// 時刻表示
+// 時刻表示（元の形に戻して、色分けなし）
 void drawTime(String timeStr) {
     if (timeStr != lastTime) {
-        drawTemperatureGradientArea(5, 215, 80, 25, currentBackgroundTemp);  // 幅を100→80に短縮
+        drawTemperatureGradientArea(5, 215, 80, 25, currentBackgroundTemp);
         
         tft.setTextSize(2);
-        tft.setTextColor(TFT_YELLOW);
+        tft.setTextColor(TFT_YELLOW);  // 常に黄色
         tft.drawString(timeStr, 10, 220);
         lastTime = timeStr;
         
@@ -74,13 +73,13 @@ void drawTime(String timeStr) {
     }
 }
 
-// 日付表示
+// 日付表示（元の形に戻して、色分けなし）
 void drawDate(String dateStr) {
     if (dateStr != lastDate) {
         drawTemperatureGradientArea(90, 215, 130, 25, currentBackgroundTemp);
         
         tft.setTextSize(2);
-        tft.setTextColor(TFT_CYAN);
+        tft.setTextColor(TFT_CYAN);  // 常にシアン
         tft.drawString(dateStr, 95, 220);
         lastDate = dateStr;
         

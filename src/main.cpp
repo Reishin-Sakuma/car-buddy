@@ -124,10 +124,10 @@ void loop() {
             
             // === 背景とすべての要素を同期描画（ラグ解消） ===
             
-            // 1. 現在値を事前に取得
+            // 1. 現在値を事前に取得（タイムアウト設定済みで高速）
             float currentSpeed = getSpeed();
-            String currentTimeStr = getCurrentTime();
-            String currentDateStr = getCurrentDate();
+            String currentTimeStr = getCurrentTime();  // 50msタイムアウトで高速取得
+            String currentDateStr = getCurrentDate();  // 50msタイムアウトで高速取得
             
             // 2. 全画面背景を更新
             drawTemperatureGradientBackground(currentTemp);
@@ -141,9 +141,9 @@ void loop() {
             
             // UI固定ラベル（元の位置に戻す）
             tft.setTextSize(3);
-            tft.drawString("Temp:", 200, 10);     // 元の位置に戻す
+            tft.drawString("Temp:", 200, 10);
             tft.drawString("Speed:", 200, 130);
-            tft.drawString("km/h", 240, 180);     // 元の位置に戻す
+            tft.drawString("km/h", 240, 180);
             
             // 温度表示（文字色判定付き）
             uint16_t tempTextColor = TFT_WHITE;
@@ -152,25 +152,25 @@ void loop() {
             }
             tft.setTextSize(3);
             tft.setTextColor(tempTextColor);
-            tft.drawString(String(currentTemp, 1) + " C", 200, 35);  // 元の位置に戻す
+            tft.drawString(String(currentTemp, 1) + " C", 200, 35);
             
             // 速度表示
             tft.setTextSize(3);
             tft.setTextColor(TFT_WHITE);
-            tft.drawString(String(abs(currentSpeed), 1), 200, 155);  // 元の位置に戻す
+            tft.drawString(String(abs(currentSpeed), 1), 200, 155);
             
-            // 時刻表示
+            // 時刻表示（通常色）
             tft.setTextSize(2);
             tft.setTextColor(TFT_YELLOW);
             tft.drawString(currentTimeStr, 10, 220);
             
-            // 日付表示（位置調整）
+            // 日付表示（通常色）
             tft.setTextSize(2);
             tft.setTextColor(TFT_CYAN);
-            tft.drawString(currentDateStr, 95, 220);  // X座標を100→95に調整
+            tft.drawString(currentDateStr, 95, 220);
             
             // キャラクター描画（元の位置に戻す）
-            drawCharacterImageWithEdgeFade(10, 30);  // 元の位置に戻す
+            drawCharacterImageWithEdgeFade(10, 30);
             
             // 4. 前回値を更新
             forceUpdateAllDisplayValues();
@@ -205,18 +205,20 @@ void loop() {
         lastSpeedUpdate = currentTime;
     }
 
-    // === 時刻更新 ===
+    // === 時刻更新（高速化・ノンブロッキング） ===
     if (currentTime - lastTimeUpdate >= TIME_UPDATE_INTERVAL) {
+        // タイムアウト設定済みで高速取得（50ms制限）
         drawTime(getCurrentTime());
         drawDate(getCurrentDate());
         lastTimeUpdate = currentTime;
     }
 
-
-    // === シリアルデバッグ出力 ===
+    // === シリアルデバッグ出力（軽量化） ===
     if (currentTime - lastSerialUpdate >= SERIAL_UPDATE_INTERVAL) {
         float temp = getTemperature();
         float speed = getSpeed();
+        
+        // 時刻は高速取得（タイムアウト設定済み）
         String timeStr = getCurrentTime();
         String dateStr = getCurrentDate();
         

@@ -5,6 +5,8 @@
 #include "../include/speed.hpp"
 #include "../include/time.hpp"
 #include "webserver.hpp"
+#include "../include/mode_manager.hpp"
+#include "../include/clock.hpp"
 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -84,6 +86,7 @@ void setup() {
     initTemperatureSensor();
     initSpeedSensor();
     initTimeSystem();
+    initModeManager();
 
     Serial.println("=== Sensors initialized ===");
 
@@ -98,6 +101,7 @@ void setup() {
 
 void loop() {
     unsigned long currentTime = millis();
+    updateModeManager();
     
     // === 温度更新 ===
     if (currentTime - lastTempUpdate >= TEMP_UPDATE_INTERVAL) {
@@ -170,7 +174,7 @@ void loop() {
             tft.drawString(currentDateStr, 95, 220);
             
             // キャラクター描画（元の位置に戻す）
-            drawCharacterImageWithEdgeFade(10, 30);
+            updateDisplay();
             
             // 4. 前回値を更新
             forceUpdateAllDisplayValues();
@@ -211,6 +215,9 @@ void loop() {
         drawTime(getCurrentTime());
         drawDate(getCurrentDate());
         lastTimeUpdate = currentTime;
+        if (getCurrentMode() == MODE_ANALOG_CLOCK) {
+            drawAnalogClock();  // アナログ時計の場合、秒針更新
+        }
     }
 
     // === シリアルデバッグ出力（軽量化） ===

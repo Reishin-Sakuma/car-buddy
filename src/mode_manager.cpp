@@ -160,10 +160,10 @@ void clearDisplayArea() {
 void updateDisplay() {
     switch (currentMode) {
         case MODE_CHARACTER:
-            // キャラクター画像を表示
+            // 🔧 修正: 温度連動機能付きのキャラクター描画関数を呼び出し
             setClockVisible(false);  // アナログ時計を非表示
-            drawCharacterImageWithEdgeFade(10, 30);  // 既存のキャラクター描画関数
-            Serial.println("👤 キャラクター画像を表示しました");
+            drawCharacter();         // 温度連動キャラクター描画（位置は関数内で制御）
+            Serial.println("👤 温度連動キャラクター画像を表示しました");
             break;
             
         case MODE_ANALOG_CLOCK:

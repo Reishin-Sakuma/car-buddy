@@ -43,7 +43,8 @@ void restoreTimeFromEEPROM() {
 
 String getCurrentTimeString() {
     struct tm timeinfo;
-    if (!getLocalTime(&timeinfo)) {
+    // 重要: 短いタイムアウト（100ms）を設定してブロッキングを防止
+    if (!getLocalTime(&timeinfo, 100)) {
         return "1970-01-01 00:00:00";
     }
     
@@ -54,7 +55,8 @@ String getCurrentTimeString() {
 
 String getCurrentTime() {
     struct tm timeinfo;
-    if (!getLocalTime(&timeinfo)) {
+    // 重要: 短いタイムアウト（50ms）を設定してメインループの遅延を防止
+    if (!getLocalTime(&timeinfo, 50)) {
         return "--:--";
     }
     
@@ -65,7 +67,8 @@ String getCurrentTime() {
 
 String getCurrentDate() {
     struct tm timeinfo;
-    if (!getLocalTime(&timeinfo)) {
+    // 重要: 短いタイムアウト（50ms）を設定してメインループの遅延を防止
+    if (!getLocalTime(&timeinfo, 50)) {
         return "----/--/--";
     }
     
@@ -76,5 +79,6 @@ String getCurrentDate() {
 
 bool isTimeValid() {
     struct tm timeinfo;
-    return getLocalTime(&timeinfo);
+    // 短いタイムアウトで同期状態をチェック
+    return getLocalTime(&timeinfo, 100);
 }

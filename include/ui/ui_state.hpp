@@ -8,6 +8,9 @@ void forceUpdateAllDisplayValues();
 void setLastDisplayValues(float temp, float speed, String timeStr, String dateStr);
 void forceFullRedraw(float temp);
 
+// 🆕 新規追加: モード考慮版全体再描画
+void forceFullRedrawWithMode(float temp);
+
 // 状態取得機能
 bool isUIInitialized();
 void setUIInitialized(bool initialized);

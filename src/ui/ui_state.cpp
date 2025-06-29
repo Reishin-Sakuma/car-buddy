@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include "../../include/ui/ui_state.hpp"
+#include "../../include/mode_manager.hpp"  // 🆕 追加: DisplayMode定義用
 
 // 他のモジュールから参照する関数の宣言（暫定）
 extern void drawTemperatureGradientBackground(float temp);
@@ -12,6 +13,11 @@ extern void drawCharacter();
 extern String getCurrentTime();
 extern String getCurrentDate();
 extern float getSpeed();
+
+// モード管理関数の宣言（mode_manager.hppから）
+extern void updateDisplay();
+extern DisplayMode getCurrentMode();
+extern String getCurrentModeString();
 
 // ui.cppの状態変数を参照（二重定義を避ける）
 extern bool uiInitialized;
@@ -44,7 +50,7 @@ void setLastDisplayValues(float temp, float speed, String timeStr, String dateSt
     characterDisplayed = true;
 }
 
-// 全体再描画
+// 既存のforceFullRedraw関数（モード考慮版に更新）
 void forceFullRedraw(float temp) {
     extern float currentBackgroundTemp;
     
@@ -74,10 +80,51 @@ void forceFullRedraw(float temp) {
         drawSpeed(currentSpeed);
         drawTime(currentTimeStr);
         drawDate(currentDateStr);
-        drawCharacter();  // 温度連動キャラクター表示
+        
+        // 🔧 修正: モードを考慮したキャラクター/時計描画
+        updateDisplay();  // キャラクターまたはアナログ時計をモードに応じて描画
         
         setLastDisplayValues(temp, currentSpeed, currentTimeStr, currentDateStr);
     }
+}
+
+// 🆕 新規追加: モード考慮版の全体再描画関数
+void forceFullRedrawWithMode(float temp) {
+    extern float currentBackgroundTemp;
+    
+    Serial.print("🔄 モード考慮版全体再描画開始 - 現在モード: ");
+    Serial.println(getCurrentModeString());
+    
+    float currentSpeed = getSpeed();
+    String currentTimeStr = getCurrentTime();
+    String currentDateStr = getCurrentDate();
+    
+    drawTemperatureGradientBackground(temp);
+    lastBackgroundUpdateTemp = temp;
+    
+    // 固定UI要素を再描画
+    tft.setTextColor(TFT_WHITE);
+    tft.setTextSize(2);
+    tft.drawString("CarBuddy", 25, 8);
+    
+    tft.setTextSize(3);
+    tft.drawString("Temp:", 200, 10);
+    tft.drawString("Speed:", 200, 130);
+    tft.drawString("km/h", 240, 180);
+    
+    forceUpdateAllDisplayValues();
+    
+    drawTemperature(temp);
+    drawSpeed(currentSpeed);
+    drawTime(currentTimeStr);
+    drawDate(currentDateStr);
+    
+    // モードに応じた表示切り替え
+    updateDisplay();  // キャラクターまたはアナログ時計をモードに応じて描画
+    
+    setLastDisplayValues(temp, currentSpeed, currentTimeStr, currentDateStr);
+    
+    Serial.println("✅ モード考慮版全体再描画完了");
 }
 
 // ===== 状態取得機能 =====

@@ -99,9 +99,12 @@ void setup() {
     Serial.println("=== Setup completed - Starting main loop ===");
 }
 
+
 void loop() {
     unsigned long currentTime = millis();
-    updateModeManager();
+    
+    // === モード切り替え処理（最優先） ===
+    updateModeManager();  // ロータリーエンコーダーの状態をチェック
     
     // === 温度更新 ===
     if (currentTime - lastTempUpdate >= TEMP_UPDATE_INTERVAL) {
@@ -126,7 +129,7 @@ void loop() {
             Serial.print("°C → ");
             Serial.println(colorMode);
             
-            // === 背景とすべての要素を同期描画（ラグ解消） ===
+            // === 背景とすべての要素を同期描画（モード考慮版） ===
             
             // 1. 現在値を事前に取得（タイムアウト設定済みで高速）
             float currentSpeed = getSpeed();
@@ -173,8 +176,8 @@ void loop() {
             tft.setTextColor(TFT_CYAN);
             tft.drawString(currentDateStr, 95, 220);
             
-            // キャラクター描画（元の位置に戻す）
-            updateDisplay();
+            // 🔧 修正: モードに応じた表示切り替え（キャラクター直接描画を削除）
+            updateDisplay();  // モードに応じてキャラクターまたは時計を描画
             
             // 4. 前回値を更新
             forceUpdateAllDisplayValues();
@@ -189,14 +192,17 @@ void loop() {
         lastTempUpdate = currentTime;
     }
 
-    // === 背景色更新チェック（温度以外での変化も検出） ===
+    // === 背景色更新チェック（簡単版の修正） ===
     if (currentTime - lastBackgroundUpdate >= BACKGROUND_UPDATE_INTERVAL) {
         float currentTemp = getTemperature();
         
         // 小さな温度変化でも定期的に背景色更新をチェック
         if (abs(currentTemp - lastDisplayedBackgroundTemp) > 0.5) {
             updateBackgroundTemperature(currentTemp);
+            
+            // 🔧 修正: 既存のforceFullRedraw()を使用（ui_state.cppで既に修正済み）
             forceFullRedraw(currentTemp);
+            
             lastDisplayedBackgroundTemp = currentTemp;
         }
         
@@ -209,23 +215,22 @@ void loop() {
         lastSpeedUpdate = currentTime;
     }
 
-    // === 時刻更新（高速化・ノンブロッキング） ===
+    // === 時刻更新 ===
     if (currentTime - lastTimeUpdate >= TIME_UPDATE_INTERVAL) {
-        // タイムアウト設定済みで高速取得（50ms制限）
         drawTime(getCurrentTime());
         drawDate(getCurrentDate());
         lastTimeUpdate = currentTime;
+        
+        // アナログ時計モードの場合、時計も更新
         if (getCurrentMode() == MODE_ANALOG_CLOCK) {
-            drawAnalogClock();  // アナログ時計の場合、秒針更新
+            drawAnalogClock();  // 1秒ごとに時計を更新（秒針のため）
         }
     }
 
-    // === シリアルデバッグ出力（軽量化） ===
+    // === シリアルデバッグ出力 ===
     if (currentTime - lastSerialUpdate >= SERIAL_UPDATE_INTERVAL) {
         float temp = getTemperature();
         float speed = getSpeed();
-        
-        // 時刻は高速取得（タイムアウト設定済み）
         String timeStr = getCurrentTime();
         String dateStr = getCurrentDate();
         
@@ -238,11 +243,12 @@ void loop() {
         Serial.print(", Date: ");
         Serial.print(dateStr);
         Serial.print(", WiFi clients: ");
-        Serial.println(getConnectedClientCount());
+        Serial.print(getConnectedClientCount());
+        Serial.print(", 現在モード: ");
+        Serial.println(getCurrentModeString());
         
         lastSerialUpdate = currentTime;
     }
 
-    // 少し待機してCPU負荷を軽減
     delay(10);
 }

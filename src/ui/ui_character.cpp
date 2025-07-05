@@ -197,8 +197,9 @@ void drawCharacter() {
         Serial.print("Character mode switched to: ");
         Serial.println(isHotCharacterMode ? "HOT mode (wink_hot)" : "NORMAL mode (wink_close)");
         
-        // 必ず領域をクリアしてから描画
+        // 温度変化時のみ領域をクリア
         clearCharacterArea();
+        delay(5);  // 確実にクリアが完了するまで待機
         
         // キャラクター画像を縁ぼかし効果付きで表示
         drawCharacterImageWithEdgeFade(10, 40);
@@ -214,8 +215,8 @@ void drawCharacter() {
             Serial.println("Character drawn (hot mode)");
         }
         
-        // 領域をクリアしてから描画（確実な表示のため）
-        clearCharacterArea();
+        // mode_manager.cpp側でクリアしているので、ここでは不要
+        delay(5);  // 確実にクリアが完了するまで待機
         drawCharacterImageWithEdgeFade(10, 40);
     }
 }

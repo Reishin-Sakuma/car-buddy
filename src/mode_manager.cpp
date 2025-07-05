@@ -3,6 +3,8 @@
 #include "../include/mode_manager.hpp"
 #include "../include/clock.hpp"
 #include "../include/ui.hpp"
+#include "../include/ui/ui_temperature.hpp"
+#include "../include/temperature.hpp"
 
 extern TFT_eSPI tft;
 
@@ -144,15 +146,17 @@ void switchToMode(DisplayMode mode) {
     Serial.print((int)currentMode);
     Serial.println(")");
     
-    // 表示エリアをクリアして新しいモードを表示
+    // 確実にクリアしてから表示
     clearDisplayArea();
+    delay(20);  // 表示クリアの確実な完了を待つ
     updateDisplay();
 }
 
 // ===== 表示エリアクリア =====
 void clearDisplayArea() {
-    // キャラクター/時計表示エリアをクリア（10, 30から180x180の領域）
-    tft.fillRect(10, 30, 180, 180, TFT_BLACK);
+    // キャラクター/時計表示エリアをクリア（5, 25から190x195の領域）
+    // キャラクター画像の下部が見えないよう、デジタル時計との間まで確実にクリア
+    tft.fillRect(5, 25, 190, 195, TFT_BLACK);
     Serial.println("📺 表示エリアをクリアしました");
 }
 
@@ -160,18 +164,28 @@ void clearDisplayArea() {
 void updateDisplay() {
     switch (currentMode) {
         case MODE_CHARACTER:
-            // 🔧 修正: 温度連動機能付きのキャラクター描画関数を呼び出し
-            setClockVisible(false);  // アナログ時計を非表示
-            drawCharacter();         // 温度連動キャラクター描画（位置は関数内で制御）
+            // アナログ時計を非表示に設定
+            setClockVisible(false);
+            // 時計の描画要素を完全にクリアするため、温度連動グラデーション背景で上書き
+            drawTemperatureGradientArea(5, 25, 190, 195, getTemperature());
+            // 少し遅延を入れて確実にクリア
+            delay(10);
+            // 温度連動キャラクター描画
+            drawCharacter();
             Serial.println("👤 温度連動キャラクター画像を表示しました");
             break;
             
         case MODE_ANALOG_CLOCK:
-            // アナログ時計を表示
-            setClockVisible(true);   // アナログ時計を表示状態に
-            setClockPosition(95, 120);  // 時計の中心位置設定（キャラエリアの中央）
+            // アナログ時計を表示状態に設定
+            setClockVisible(true);
+            setClockPosition(95, 120);  // 時計の中心位置設定
             setClockSize(80);           // 時計のサイズ設定
-            drawAnalogClock();          // アナログ時計描画
+            // 時計表示エリアに温度連動グラデーション背景を描画（キャラクター画像領域全体をカバー）
+            drawTemperatureGradientArea(5, 25, 190, 195, getTemperature());
+            // 少し遅延を入れて確実にクリア
+            delay(10);
+            // アナログ時計描画
+            drawAnalogClock();
             Serial.println("🕐 アナログ時計を表示しました");
             break;
             

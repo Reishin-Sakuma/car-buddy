@@ -27,9 +27,14 @@ void polarToCartesian(int centerX, int centerY, int radius, float angleDegrees, 
 
 // ===== 時計の文字盤を描画 =====
 void drawClockFace() {
-    // 外枠の円
-    tft.drawCircle(clockCenterX, clockCenterY, clockRadius, TFT_WHITE);
-    tft.drawCircle(clockCenterX, clockCenterY, clockRadius - 1, TFT_WHITE);
+    // 文字盤の背景（不透明な円）を描画してキャラクター画像を隠す
+    uint16_t faceColor = tft.color565(40, 40, 40);  // 濃いグレー
+    tft.fillCircle(clockCenterX, clockCenterY, clockRadius - 2, faceColor);
+    
+    // 外枠の円（半透明感を出すため、少し薄めの白色を使用）
+    uint16_t frameColor = tft.color565(200, 200, 200);  // 薄い白
+    tft.drawCircle(clockCenterX, clockCenterY, clockRadius, frameColor);
+    tft.drawCircle(clockCenterX, clockCenterY, clockRadius - 1, frameColor);
     
     // 12時間の目盛りを描画
     for (int hour = 1; hour <= 12; hour++) {
@@ -59,9 +64,9 @@ void drawClockFace() {
         }
     }
     
-    // 中央の点
+    // 中央の点（背景と調和するため輪郭を薄く）
     tft.fillCircle(clockCenterX, clockCenterY, 4, TFT_WHITE);
-    tft.drawCircle(clockCenterX, clockCenterY, 4, TFT_BLACK);
+    tft.drawCircle(clockCenterX, clockCenterY, 4, frameColor);
 }
 
 // ===== 時針を描画 =====
@@ -122,8 +127,8 @@ void drawAnalogClock() {
         second = 0;
     }
     
-    // 時計エリアをクリア（背景に合わせた色で）
-    tft.fillCircle(clockCenterX, clockCenterY, clockRadius + 2, TFT_BLACK);
+    // 背景をクリアしない（透明背景）
+    // tft.fillCircle(clockCenterX, clockCenterY, clockRadius + 5, TFT_BLACK);
     
     // 文字盤を描画
     drawClockFace();

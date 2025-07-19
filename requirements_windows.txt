@@ -1,0 +1,23 @@
+# CarBuddy Python版 - Windows デバッグ用依存関係
+
+# 画像処理（Windows用）
+Pillow>=9.0.0
+
+# 数値計算
+numpy>=1.21.0
+
+# 時刻処理
+python-dateutil>=2.8.2
+
+# 開発・テスト用
+pytest>=7.0.0
+pytest-mock>=3.7.0
+
+# デバッグ用
+colorlog>=6.6.0
+
+# 注意: 以下はWindows環境では不要/利用不可
+# w1thermsensor  - Linux/Raspberry Pi専用
+# smbus2         - Linux/Raspberry Pi専用  
+# RPi.GPIO       - Raspberry Pi専用
+# flask          - Webサーバー機能（デバッグ時は無効）

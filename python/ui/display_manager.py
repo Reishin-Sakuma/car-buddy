@@ -289,4 +289,9 @@ class DisplayManager:
     def destroy(self):
         """リソース解放"""
         if self.root:
-            self.root.destroy()
+            try:
+                self.root.destroy()
+            except Exception:
+                pass  # 既に破棄されている場合は無視
+            finally:
+                self.root = None

@@ -52,16 +52,34 @@ class DisplayManager:
                 self.root,
                 width=screen_width,
                 height=screen_height,
-                bg=self.current_background_color,
+                bg="black",  # グラデーション背景用に黒背景
                 highlightthickness=0
             )
             self.canvas.pack(fill=tk.BOTH, expand=True)
             
+            # グラデーション背景用の矩形ID
+            self.background_gradient_items = []
+            
+            # アニメーション制御
+            self.target_background_color = self.current_background_color
+            self.animation_steps = 20  # アニメーション段数
+            self.animation_duration = 500  # ミリ秒
+            self.animation_timer = None
+            
+            # スプラッシュ画面制御
+            self.splash_text_id = None
+            self.splash_background_id = None
+            self.splash_animation_timer = None
+            self.splash_fade_step = 0
+            self.splash_fade_steps = 30  # フェードアニメーション段数
+            self.splash_fade_duration = 1000  # フェード時間（ms）
+            
             # PNG画像を読み込み
             self._load_character_images()
             
-            # 初期UI描画
-            self._draw_initial_ui()
+            # 初期グラデーション背景描画
+            self._draw_gradient_background(self.current_background_color)
+            self.current_background_color = self.current_background_color  # 確実に設定
             
             logger.info("Display system initialized successfully")
             return True
@@ -208,38 +226,42 @@ class DisplayManager:
             logger.warning(f"Character image not found: {image_key}")
             return
             
-        # 既存の画像を削除
+        # 既存の画像がある場合は画像のみを変更（ちらつき防止）
         if self.display_elements["character_image"]:
-            self.canvas.delete(self.display_elements["character_image"])
-        
-        # 新しい画像を配置
-        self.display_elements["character_image"] = self.canvas.create_image(
-            150, 250,  # 中央左寄りに配置
-            image=self.character_images[image_key]
-        )
+            self.canvas.itemconfig(
+                self.display_elements["character_image"],
+                image=self.character_images[image_key]
+            )
+        else:
+            # 初回のみ新しい画像を作成
+            self.display_elements["character_image"] = self.canvas.create_image(
+                150, 250,  # 中央左寄りに配置
+                image=self.character_images[image_key]
+            )
     
     def _update_background_color(self, temperature: float):
-        """温度に応じて背景色を更新"""
+        """温度に応じてグラデーション背景色を更新"""
         colors = self.config["COLORS"]
         transition_temp = self.config["TEMP_THRESHOLDS"]["transition"]
         hot_temp = self.config["TEMP_THRESHOLDS"]["hot_warning"]
         
         if temperature >= hot_temp:
-            new_color = colors["background_hot"]
+            target_color = colors["background_hot"]
         elif temperature >= transition_temp:
             # グラデーション計算（青→赤）
             ratio = (temperature - transition_temp) / (hot_temp - transition_temp)
-            new_color = self._interpolate_color(
+            target_color = self._interpolate_color(
                 colors["background_cold"],
                 colors["background_hot"],
                 ratio
             )
         else:
-            new_color = colors["background_cold"]
+            target_color = colors["background_cold"]
         
-        if new_color != self.current_background_color:
-            self.canvas.configure(bg=new_color)
-            self.current_background_color = new_color
+        # 目標色が変わった場合のみアニメーション開始
+        if target_color != self.target_background_color:
+            self.target_background_color = target_color
+            self._start_color_animation()
     
     def _interpolate_color(self, color1: str, color2: str, ratio: float) -> str:
         """2つの色の間を補間"""
@@ -256,30 +278,245 @@ class DisplayManager:
         # 16進数に戻す
         return f"#{rgb_result[0]:02x}{rgb_result[1]:02x}{rgb_result[2]:02x}"
     
+    def _start_color_animation(self):
+        """背景色アニメーションを開始"""
+        # 既存のアニメーションがあればキャンセル
+        if self.animation_timer:
+            self.root.after_cancel(self.animation_timer)
+        
+        # アニメーション開始
+        self.animation_step = 0
+        self.animation_start_color = self.current_background_color
+        self._animate_color_step()
+    
+    def _animate_color_step(self):
+        """色アニメーションの1ステップ実行"""
+        if self.animation_step >= self.animation_steps:
+            # アニメーション完了
+            self.current_background_color = self.target_background_color
+            self._update_gradient_colors(self.current_background_color)
+            self.animation_timer = None
+            return
+        
+        # 現在のアニメーション進行度（0.0 〜 1.0）
+        progress = self.animation_step / self.animation_steps
+        
+        # イージング関数適用（滑らかな変化）
+        eased_progress = self._ease_in_out(progress)
+        
+        # 中間色を計算
+        intermediate_color = self._interpolate_color(
+            self.animation_start_color,
+            self.target_background_color,
+            eased_progress
+        )
+        
+        # グラデーション背景を更新（既存の矩形の色のみ変更）
+        self._update_gradient_colors(intermediate_color)
+        
+        # 次のステップをスケジュール
+        self.animation_step += 1
+        step_delay = self.animation_duration // self.animation_steps
+        self.animation_timer = self.root.after(step_delay, self._animate_color_step)
+    
+    def _ease_in_out(self, t: float) -> float:
+        """イージング関数（滑らかな加速・減速）"""
+        return t * t * (3.0 - 2.0 * t)
+    
+    def _update_gradient_colors(self, base_color: str):
+        """既存のグラデーション矩形の色のみを更新"""
+        if not self.background_gradient_items:
+            # 初回の場合は新規作成
+            self._draw_gradient_background(base_color)
+            return
+        
+        # ベース色から明るい色と暗い色を計算
+        rgb_base = tuple(int(base_color[i:i+2], 16) for i in (1, 3, 5))
+        
+        for i, rect_id in enumerate(self.background_gradient_items):
+            # 上部は明るく、下部は暗く
+            lightness_factor = 1.3 - (i / len(self.background_gradient_items)) * 0.6
+            
+            # RGB値を調整
+            rgb_adjusted = tuple(
+                min(255, max(0, int(rgb_base[j] * lightness_factor)))
+                for j in range(3)
+            )
+            
+            color = f"#{rgb_adjusted[0]:02x}{rgb_adjusted[1]:02x}{rgb_adjusted[2]:02x}"
+            
+            # 既存の矩形の色を変更
+            self.canvas.itemconfig(rect_id, fill=color, outline=color)
+    
+    def _draw_gradient_background(self, base_color: str):
+        """グラデーション背景を描画"""
+        # 既存のグラデーション要素を削除
+        for item in self.background_gradient_items:
+            self.canvas.delete(item)
+        self.background_gradient_items.clear()
+        
+        # 画面サイズ取得
+        screen_width = self.config.get("SCREEN_WIDTH", 800)
+        screen_height = self.config.get("SCREEN_HEIGHT", 480)
+        
+        # グラデーション段数（多いほど滑らか）
+        gradient_steps = 50
+        step_height = screen_height / gradient_steps
+        
+        # ベース色から明るい色と暗い色を計算
+        rgb_base = tuple(int(base_color[i:i+2], 16) for i in (1, 3, 5))
+        
+        for i in range(gradient_steps):
+            # 上部は明るく、下部は暗く
+            lightness_factor = 1.3 - (i / gradient_steps) * 0.6  # 1.3 -> 0.7
+            
+            # RGB値を調整（255を超えないように制限）
+            rgb_adjusted = tuple(
+                min(255, max(0, int(rgb_base[j] * lightness_factor)))
+                for j in range(3)
+            )
+            
+            color = f"#{rgb_adjusted[0]:02x}{rgb_adjusted[1]:02x}{rgb_adjusted[2]:02x}"
+            
+            # 矩形を描画
+            y1 = i * step_height
+            y2 = (i + 1) * step_height
+            
+            rect_id = self.canvas.create_rectangle(
+                0, y1, screen_width, y2,
+                fill=color, outline=color
+            )
+            self.background_gradient_items.append(rect_id)
+        
+        # 初回のみUI要素を前面に移動
+        if len(self.background_gradient_items) == gradient_steps:
+            self._bring_ui_elements_to_front()
+    
+    def _bring_ui_elements_to_front(self):
+        """UI要素をグラデーション背景の前面に移動（初回のみ）"""
+        # display_elementsの各要素を前面に移動
+        for element_id in self.display_elements.values():
+            if element_id:
+                self.canvas.tag_raise(element_id)
+    
     def _exit_fullscreen(self, event=None):
         """フルスクリーン終了"""
         if self.root:
             self.root.attributes('-fullscreen', False)
     
     def show_splash_screen(self):
-        """スプラッシュ画面表示"""
+        """スプラッシュ画面表示（フェードイン・アウト付き）"""
         if not self.canvas:
             return
             
-        # 一時的なスプラッシュ表示
-        splash_text = self.canvas.create_text(
+        # 既存のスプラッシュがあれば削除
+        self._clear_splash_elements()
+        
+        # 黒背景を作成
+        self.splash_background_id = self.canvas.create_rectangle(
+            0, 0,
+            self.config["SCREEN_WIDTH"],
+            self.config["SCREEN_HEIGHT"],
+            fill="black",
+            outline="black"
+        )
+        
+        # スプラッシュテキストを作成（初期は透明）
+        self.splash_text_id = self.canvas.create_text(
             self.config["SCREEN_WIDTH"] // 2,
             self.config["SCREEN_HEIGHT"] // 2,
             text="CarBuddy\nStarting...",
-            fill=self.config["COLORS"]["text_normal"],
+            fill="#000000",  # 初期は透明（黒）
             font=("Arial", 32, "bold"),
             justify="center"
         )
         
+        # スプラッシュ要素を最前面に移動
+        self.canvas.tag_raise(self.splash_background_id)
+        self.canvas.tag_raise(self.splash_text_id)
+        
         self.root.update()
         
-        # 2秒後に削除
-        self.root.after(2000, lambda: self.canvas.delete(splash_text))
+        # フェードインアニメーション開始
+        self.splash_fade_step = 0
+        self._start_fade_in_animation()
+    
+    def _start_fade_in_animation(self):
+        """フェードインアニメーション開始"""
+        self._animate_fade_in()
+    
+    def _animate_fade_in(self):
+        """フェードインアニメーションの1ステップ"""
+        if self.splash_fade_step >= self.splash_fade_steps:
+            # フェードイン完了、1秒待機してからフェードアウト開始
+            self.root.after(1000, self._start_fade_out_animation)
+            return
+        
+        # 透明度計算（0.0 〜 1.0）
+        alpha = self.splash_fade_step / self.splash_fade_steps
+        
+        # 白色の透明度を計算（255 * alpha）
+        color_value = int(255 * alpha)
+        color = f"#{color_value:02x}{color_value:02x}{color_value:02x}"
+        
+        # テキストの色を更新
+        if self.splash_text_id:
+            self.canvas.itemconfig(self.splash_text_id, fill=color)
+        
+        # 次のステップをスケジュール
+        self.splash_fade_step += 1
+        step_delay = self.splash_fade_duration // self.splash_fade_steps
+        self.splash_animation_timer = self.root.after(step_delay, self._animate_fade_in)
+    
+    def _start_fade_out_animation(self):
+        """フェードアウトアニメーション開始"""
+        self.splash_fade_step = self.splash_fade_steps
+        self._animate_fade_out()
+    
+    def _animate_fade_out(self):
+        """フェードアウトアニメーションの1ステップ"""
+        if self.splash_fade_step <= 0:
+            # フェードアウト完了、スプラッシュ削除
+            self._hide_splash_screen()
+            return
+        
+        # 透明度計算（1.0 〜 0.0）
+        alpha = self.splash_fade_step / self.splash_fade_steps
+        
+        # 白色の透明度を計算
+        color_value = int(255 * alpha)
+        color = f"#{color_value:02x}{color_value:02x}{color_value:02x}"
+        
+        # テキストの色を更新
+        if self.splash_text_id:
+            self.canvas.itemconfig(self.splash_text_id, fill=color)
+        
+        # 次のステップをスケジュール
+        self.splash_fade_step -= 1
+        step_delay = self.splash_fade_duration // self.splash_fade_steps
+        self.splash_animation_timer = self.root.after(step_delay, self._animate_fade_out)
+    
+    def _clear_splash_elements(self):
+        """スプラッシュ要素をクリア"""
+        if self.splash_animation_timer:
+            self.root.after_cancel(self.splash_animation_timer)
+            self.splash_animation_timer = None
+            
+        if self.splash_text_id:
+            self.canvas.delete(self.splash_text_id)
+            self.splash_text_id = None
+            
+        if self.splash_background_id:
+            self.canvas.delete(self.splash_background_id)
+            self.splash_background_id = None
+    
+    def _hide_splash_screen(self):
+        """スプラッシュ画面を非表示してメインUIを描画"""
+        # すべてのスプラッシュ要素をクリア
+        self._clear_splash_elements()
+            
+        # スプラッシュ終了後にメインUIを描画
+        self._draw_initial_ui()
     
     def run_main_loop(self):
         """メインループ開始"""
@@ -288,6 +525,16 @@ class DisplayManager:
     
     def destroy(self):
         """リソース解放"""
+        # アニメーションタイマーをキャンセル
+        if self.animation_timer:
+            self.root.after_cancel(self.animation_timer)
+            self.animation_timer = None
+            
+        # スプラッシュアニメーションタイマーをキャンセル
+        if self.splash_animation_timer:
+            self.root.after_cancel(self.splash_animation_timer)
+            self.splash_animation_timer = None
+            
         if self.root:
             try:
                 self.root.destroy()

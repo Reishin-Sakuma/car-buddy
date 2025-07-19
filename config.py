@@ -9,10 +9,11 @@ SCREEN_HEIGHT = 480
 FULLSCREEN = True
 
 # === 更新間隔（ミリ秒） ===
-TEMP_UPDATE_INTERVAL = 2000   # 温度: 2秒
-SPEED_UPDATE_INTERVAL = 100   # 速度: 100ms
+TEMP_UPDATE_INTERVAL = 1000   # 温度: 1秒（ESP32では2秒だったが高速化）
+SPEED_UPDATE_INTERVAL = 50    # 速度: 50ms（ESP32では100msだったが高速化）
 TIME_UPDATE_INTERVAL = 1000   # 時刻: 1秒
-BACKGROUND_UPDATE_INTERVAL = 500  # 背景色: 500ms
+BACKGROUND_UPDATE_INTERVAL = 100  # 背景色: 100ms（ESP32では500msだったが高速化）
+UI_REFRESH_INTERVAL = 16      # UI全体: 約60FPS（新規追加）
 
 # === センサー設定 ===
 # 温度センサー（DS18B20）
@@ -30,6 +31,16 @@ CHARACTER_IMAGE_FILES = {
     "wink": "character_wink.png"
 }
 
+# === フォント設定 ===
+FONTS = {
+    "temperature": ("Arial", 72, "bold"),      # 温度表示（ESP32では小さかった）
+    "speed": ("Arial", 48, "normal"),          # 速度表示
+    "time": ("Arial", 36, "bold"),             # 時刻表示
+    "date": ("Arial", 36, "normal"),           # 日付表示（時刻と同じサイズに）
+    "splash": ("Arial", 32, "bold"),           # スプラッシュ画面
+    "status": ("Arial", 16, "normal")          # ステータス表示
+}
+
 # === 色設定 ===
 COLORS = {
     "background_cold": "#0066CC",  # 青
@@ -37,14 +48,24 @@ COLORS = {
     "text_normal": "#FFFFFF",      # 白
     "text_hot": "#FFFF00",         # 黄色
     "text_time": "#FFFF00",        # 黄色
-    "text_date": "#00FFFF"         # シアン
+    "text_date": "#00FFFF",        # シアン
+    "text_shadow": "#000000"       # 影（新規追加）
+}
+
+# === アニメーション設定 ===
+ANIMATIONS = {
+    "background_transition_duration": 300,  # 背景色変化時間（ms）
+    "text_fade_duration": 200,              # テキストフェード時間（ms）
+    "character_change_duration": 150,       # キャラ変更時間（ms）
+    "smooth_value_change": True,            # 数値の滑らかな変化
+    "easing_enabled": True,                 # イージング効果有効
 }
 
 # === 温度閾値 ===
 TEMP_THRESHOLDS = {
     "hot_warning": 32.0,    # 警告温度
     "transition": 30.0,     # 背景色変化開始
-    "background_change": 1.0  # 背景変更の最小温度差
+    "background_change": 0.5  # 背景変更の最小温度差（ESP32では1.0だったが高感度化）
 }
 
 # === Webサーバー設定 ===

@@ -60,11 +60,17 @@ class DisplayManager:
             # グラデーション背景用の矩形ID
             self.background_gradient_items = []
             
-            # アニメーション制御
+            # アニメーション制御（設定から取得）
             self.target_background_color = self.current_background_color
             self.animation_steps = 20  # アニメーション段数
-            self.animation_duration = 500  # ミリ秒
+            self.animation_duration = self.config.get("ANIMATIONS", {}).get("background_transition_duration", 300)
             self.animation_timer = None
+            
+            # 数値表示用（滑らかな変化）
+            self.current_temp_display = 0.0
+            self.target_temp_display = 0.0
+            self.current_speed_display = 0.0
+            self.target_speed_display = 0.0
             
             # スプラッシュ画面制御
             self.splash_text_id = None
@@ -74,12 +80,14 @@ class DisplayManager:
             self.splash_fade_steps = 30  # フェードアニメーション段数
             self.splash_fade_duration = 1000  # フェード時間（ms）
             
+            
             # PNG画像を読み込み
             self._load_character_images()
             
             # 初期グラデーション背景描画
             self._draw_gradient_background(self.current_background_color)
             self.current_background_color = self.current_background_color  # 確実に設定
+            
             
             logger.info("Display system initialized successfully")
             return True
@@ -124,40 +132,78 @@ class DisplayManager:
             font=("Arial", 24, "bold"), anchor="nw"
         )
         
-        # 温度ラベル
+        # 温度ラベル（影付きで視認性向上）
+        fonts = self.config.get("FONTS", {})
+        temp_font = fonts.get("temperature", ("Arial", 72, "bold"))
+        status_font = fonts.get("status", ("Arial", 16, "normal"))
+        
+        # 温度ラベル影
+        self.canvas.create_text(
+            402, 52, text="Temp:", fill=colors.get("text_shadow", "#000000"),
+            font=status_font, anchor="nw"
+        )
         self.display_elements["temperature_label"] = self.canvas.create_text(
             400, 50, text="Temp:", fill=colors["text_normal"],
-            font=("Arial", 20, "bold"), anchor="nw"
+            font=status_font, anchor="nw"
         )
         
-        # 温度値（初期値）
+        # 温度値影
+        self.display_elements["temperature_value_shadow"] = self.canvas.create_text(
+            402, 82, text="--°C", fill=colors.get("text_shadow", "#000000"),
+            font=temp_font, anchor="nw"
+        )
+        # 温度値（メイン）
         self.display_elements["temperature_value"] = self.canvas.create_text(
             400, 80, text="--°C", fill=colors["text_normal"],
-            font=("Arial", 18), anchor="nw"
+            font=temp_font, anchor="nw"
         )
         
-        # 速度ラベル
+        # 速度表示（影付き）
+        speed_font = fonts.get("speed", ("Arial", 48, "normal"))
+        
+        # 速度ラベル影
+        self.canvas.create_text(
+            402, 192, text="Speed:", fill=colors.get("text_shadow", "#000000"),
+            font=status_font, anchor="nw"
+        )
         self.display_elements["speed_label"] = self.canvas.create_text(
-            400, 150, text="Speed:", fill=colors["text_normal"],
-            font=("Arial", 20, "bold"), anchor="nw"
+            400, 190, text="Speed:", fill=colors["text_normal"],
+            font=status_font, anchor="nw"
         )
         
-        # 速度値（初期値）
+        # 速度値影
+        self.display_elements["speed_value_shadow"] = self.canvas.create_text(
+            402, 222, text="0.0 km/h", fill=colors.get("text_shadow", "#000000"),
+            font=speed_font, anchor="nw"
+        )
+        # 速度値（メイン）
         self.display_elements["speed_value"] = self.canvas.create_text(
-            400, 180, text="0.0 km/h", fill=colors["text_normal"],
-            font=("Arial", 18), anchor="nw"
+            400, 220, text="0.0 km/h", fill=colors["text_normal"],
+            font=speed_font, anchor="nw"
         )
         
-        # 時刻表示（初期値）
+        # 時刻表示（影付き、大型化）
+        time_font = fonts.get("time", ("Arial", 36, "bold"))
+        date_font = fonts.get("date", ("Arial", 24, "normal"))
+        
+        # 時刻影
+        self.display_elements["time_display_shadow"] = self.canvas.create_text(
+            52, 422, text="--:--:--", fill=colors.get("text_shadow", "#000000"),
+            font=time_font, anchor="nw"
+        )
         self.display_elements["time_display"] = self.canvas.create_text(
             50, 420, text="--:--:--", fill=colors["text_time"],
-            font=("Arial", 16), anchor="nw"
+            font=time_font, anchor="nw"
         )
         
-        # 日付表示（初期値）
+        # 日付影（時刻の右隣に配置）
+        self.display_elements["date_display_shadow"] = self.canvas.create_text(
+            252, 422, text="----/--/--", fill=colors.get("text_shadow", "#000000"),
+            font=date_font, anchor="nw"
+        )
         self.display_elements["date_display"] = self.canvas.create_text(
-            200, 420, text="----/--/--", fill=colors["text_date"],
-            font=("Arial", 16), anchor="nw"
+            250, 420, text="----/--/--", fill=colors["text_date"],
+            font=date_font, anchor="nw"
         )
         
         # デフォルトキャラクター画像
@@ -174,10 +220,15 @@ class DisplayManager:
         # 温度に応じた文字色
         text_color = colors["text_hot"] if temperature >= temp_threshold else colors["text_normal"]
         
-        # 温度値更新
+        # 温度値更新（影とメイン両方）
+        temp_text = f"{temperature:.1f}°C"
+        self.canvas.itemconfig(
+            self.display_elements["temperature_value_shadow"],
+            text=temp_text
+        )
         self.canvas.itemconfig(
             self.display_elements["temperature_value"],
-            text=f"{temperature:.1f}°C",
+            text=temp_text,
             fill=text_color
         )
         
@@ -194,17 +245,28 @@ class DisplayManager:
         """速度表示を更新"""
         if not self.canvas or not self.display_elements["speed_value"]:
             return
-            
+        
+        # 速度値更新（影とメイン両方）
+        speed_text = f"{abs(speed):.1f} km/h"
+        self.canvas.itemconfig(
+            self.display_elements["speed_value_shadow"],
+            text=speed_text
+        )
         self.canvas.itemconfig(
             self.display_elements["speed_value"],
-            text=f"{abs(speed):.1f} km/h"
+            text=speed_text
         )
     
     def update_time_display(self, time_str: str):
         """時刻表示を更新"""
         if not self.canvas or not self.display_elements["time_display"]:
             return
-            
+        
+        # 時刻更新（影とメイン両方）
+        self.canvas.itemconfig(
+            self.display_elements["time_display_shadow"],
+            text=time_str
+        )
         self.canvas.itemconfig(
             self.display_elements["time_display"],
             text=time_str
@@ -214,7 +276,12 @@ class DisplayManager:
         """日付表示を更新"""
         if not self.canvas or not self.display_elements["date_display"]:
             return
-            
+        
+        # 日付更新（影とメイン両方）
+        self.canvas.itemconfig(
+            self.display_elements["date_display_shadow"],
+            text=date_str
+        )
         self.canvas.itemconfig(
             self.display_elements["date_display"],
             text=date_str
@@ -277,6 +344,8 @@ class DisplayManager:
         
         # 16進数に戻す
         return f"#{rgb_result[0]:02x}{rgb_result[1]:02x}{rgb_result[2]:02x}"
+    
+    
     
     def _start_color_animation(self):
         """背景色アニメーションを開始"""
@@ -422,12 +491,13 @@ class DisplayManager:
         )
         
         # スプラッシュテキストを作成（初期は透明）
+        splash_font = self.config.get("FONTS", {}).get("splash", ("Arial", 32, "bold"))
         self.splash_text_id = self.canvas.create_text(
             self.config["SCREEN_WIDTH"] // 2,
             self.config["SCREEN_HEIGHT"] // 2,
             text="CarBuddy\nStarting...",
             fill="#000000",  # 初期は透明（黒）
-            font=("Arial", 32, "bold"),
+            font=splash_font,
             justify="center"
         )
         
@@ -534,6 +604,7 @@ class DisplayManager:
         if self.splash_animation_timer:
             self.root.after_cancel(self.splash_animation_timer)
             self.splash_animation_timer = None
+            
             
         if self.root:
             try:

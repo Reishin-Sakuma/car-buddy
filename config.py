@@ -23,6 +23,10 @@ TEMP_SENSOR_ID = None  # Noneの場合は自動検出
 MPU6050_I2C_BUS = 1
 MPU6050_ADDRESS = 0x68
 
+# ロータリーエンコーダー（3ピン）
+ROTARY_ENCODER_CLK_PIN = 17  # GPIO17 (ピン11)
+ROTARY_ENCODER_DT_PIN = 18   # GPIO18 (ピン12)
+
 # === 画像設定 ===
 CHARACTER_IMAGE_DIR = "images"
 CHARACTER_IMAGE_FILES = {
@@ -86,4 +90,4 @@ ROTARY_ENCODER_PINS = {
 
 # === デバッグ設定 ===
 DEBUG_MODE = False
-MOCK_SENSORS = False  # センサーなしでテスト実行
+MOCK_SENSORS = True  # センサーなしでテスト実行

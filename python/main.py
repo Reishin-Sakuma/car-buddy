@@ -16,6 +16,7 @@ import config
 from ui.display_manager import DisplayManager
 from sensors.temperature_sensor import TemperatureSensor
 from sensors.speed_sensor import SpeedSensor
+from sensors.rotary_encoder import RotaryEncoderInput
 from utils.time_manager import TimeManager
 
 # ログ設定
@@ -49,13 +50,16 @@ class CarBuddyApp:
             "MOCK_SENSORS": config.MOCK_SENSORS,
             "MPU6050_I2C_BUS": config.MPU6050_I2C_BUS,
             "MPU6050_ADDRESS": config.MPU6050_ADDRESS,
-            "TEMP_SENSOR_ID": config.TEMP_SENSOR_ID
+            "TEMP_SENSOR_ID": config.TEMP_SENSOR_ID,
+            "ROTARY_ENCODER_CLK_PIN": config.ROTARY_ENCODER_CLK_PIN,
+            "ROTARY_ENCODER_DT_PIN": config.ROTARY_ENCODER_DT_PIN
         }
         
         # コンポーネント初期化
         self.display_manager: Optional[DisplayManager] = None
         self.temperature_sensor: Optional[TemperatureSensor] = None
         self.speed_sensor: Optional[SpeedSensor] = None
+        self.rotary_encoder: Optional[RotaryEncoderInput] = None
         self.time_manager: Optional[TimeManager] = None
         
         # 更新スレッド管理
@@ -92,13 +96,25 @@ class CarBuddyApp:
                 logger.error("Failed to initialize speed sensor")
                 return False
             
+            # ロータリーエンコーダー初期化
+            self.rotary_encoder = RotaryEncoderInput(self.config)
+            if not self.rotary_encoder.initialize():
+                logger.error("Failed to initialize rotary encoder")
+                return False
+            
+            # ロータリーエンコーダーのコールバック設定
+            self.rotary_encoder.set_rotation_callback(self._on_rotary_encoder_rotation)
+            
             # 時刻管理初期化
             self.time_manager = TimeManager(self.config)
             
             logger.info("All components initialized successfully")
             
             # スプラッシュ画面表示
-            self.display_manager.show_splash_screen()
+            self.display_manager.show_splash_screen("CarBuddy\nStarting...")
+            
+            # 温度センサーの準備を待つ
+            self._wait_for_sensors()
             
             return True
             
@@ -106,9 +122,82 @@ class CarBuddyApp:
             logger.error(f"Failed to initialize application: {e}")
             return False
     
+    def _wait_for_sensors(self):
+        """センサーの準備完了を待つ"""
+        logger.info("Waiting for sensors to be ready...")
+        
+        # 温度センサーの準備を待つ
+        temp_ready = False
+        check_count = 0
+        max_checks = 30  # 最大30回チェック（約15秒）
+        
+        while not temp_ready and check_count < max_checks:
+            try:
+                self.display_manager.update_splash_message(f"CarBuddy\nWaiting for sensors...\n({check_count + 1}/{max_checks})")
+                
+                if self.temperature_sensor.is_ready():
+                    temp_ready = True
+                    logger.info("Temperature sensor is ready")
+                    break
+                    
+                time.sleep(0.5)  # 500ms待機
+                check_count += 1
+                
+            except Exception as e:
+                logger.warning(f"Error checking sensor readiness: {e}")
+                time.sleep(0.5)
+        
+        if temp_ready:
+            # 初期値を取得
+            try:
+                initial_temperature = self.temperature_sensor.get_temperature()
+                initial_speed = self.speed_sensor.get_speed()
+                self.last_values["temperature"] = initial_temperature
+                self.last_values["speed"] = initial_speed
+                logger.info(f"Initial values - Temperature: {initial_temperature:.1f}°C, Speed: {initial_speed:.1f} km/h")
+                
+                self.display_manager.update_splash_message("CarBuddy\nSensors ready!")
+                time.sleep(1.0)  # 1秒間表示
+                
+            except Exception as e:
+                logger.warning(f"Failed to get initial values: {e}")
+        else:
+            logger.warning("Temperature sensor not ready after timeout, continuing anyway")
+            self.display_manager.update_splash_message("CarBuddy\nSensor timeout\nContinuing...")
+            time.sleep(1.0)
+        
+        # スプラッシュを非表示にしてメインUIを表示
+        self.display_manager.hide_splash_screen_manual()
+    
+    def _on_rotary_encoder_rotation(self, direction: int):
+        """ロータリーエンコーダー回転時のコールバック"""
+        try:
+            if direction > 0:
+                # 時計回り: 表示モード切り替え
+                logger.info("Rotary encoder: clockwise rotation - toggling display mode")
+                if self.display_manager:
+                    self.display_manager.toggle_display_mode()
+            elif direction < 0:
+                # 反時計回り: 表示モード切り替え（同じ処理）
+                logger.info("Rotary encoder: counter-clockwise rotation - toggling display mode")
+                if self.display_manager:
+                    self.display_manager.toggle_display_mode()
+        except Exception as e:
+            logger.error(f"Error handling rotary encoder rotation: {e}")
+    
     def start_update_threads(self):
         """更新スレッドを開始"""
         self.running = True
+        
+        # 初期値を即座に表示（センサー準備済み）
+        try:
+            if self.last_values["temperature"] is not None:
+                self.display_manager.update_temperature_display(self.last_values["temperature"])
+            if self.last_values["speed"] is not None:
+                self.display_manager.update_speed_display(self.last_values["speed"])
+            logger.info("Initial values displayed")
+        except Exception as e:
+            logger.warning(f"Failed to display initial values: {e}")
         
         # 温度更新スレッド
         temp_thread = threading.Thread(target=self._temperature_update_loop, daemon=True)
@@ -190,15 +279,32 @@ class CarBuddyApp:
         
         # スレッド終了待機
         for thread in self.update_threads:
-            thread.join(timeout=1.0)
+            try:
+                thread.join(timeout=2.0)
+                if thread.is_alive():
+                    logger.warning(f"Thread {thread.name} did not terminate gracefully")
+            except Exception as e:
+                logger.warning(f"Error joining thread: {e}")
         
         # センサークリーンアップ
-        if self.speed_sensor:
-            self.speed_sensor.cleanup()
+        try:
+            if self.speed_sensor:
+                self.speed_sensor.cleanup()
+        except Exception as e:
+            logger.warning(f"Error cleaning up speed sensor: {e}")
+        
+        try:
+            if self.rotary_encoder:
+                self.rotary_encoder.cleanup()
+        except Exception as e:
+            logger.warning(f"Error cleaning up rotary encoder: {e}")
         
         # ディスプレイクリーンアップ
-        if self.display_manager:
-            self.display_manager.destroy()
+        try:
+            if self.display_manager:
+                self.display_manager.destroy()
+        except Exception as e:
+            logger.warning(f"Error cleaning up display: {e}")
         
         logger.info("CarBuddy application stopped")
     

@@ -28,7 +28,7 @@ ROTARY_ENCODER_CLK_PIN = 17  # GPIO17 (ピン11)
 ROTARY_ENCODER_DT_PIN = 18   # GPIO18 (ピン12)
 
 # === 画像設定 ===
-CHARACTER_IMAGE_DIR = "images"
+CHARACTER_IMAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "images")
 CHARACTER_IMAGE_FILES = {
     "normal": "character_normal.png",
     "hot": "character_hot.png",
@@ -40,7 +40,7 @@ FONTS = {
     "temperature": ("Arial", 72, "bold"),      # 温度表示（ESP32では小さかった）
     "speed": ("Arial", 48, "normal"),          # 速度表示
     "time": ("Arial", 36, "bold"),             # 時刻表示
-    "date": ("Arial", 36, "normal"),           # 日付表示（時刻と同じサイズに）
+    "date": ("Arial", 24, "normal"),           # 日付表示
     "splash": ("Arial", 32, "bold"),           # スプラッシュ画面
     "status": ("Arial", 16, "normal")          # ステータス表示
 }
@@ -81,13 +81,11 @@ WEB_SERVER_HOST = "0.0.0.0"
 LOG_LEVEL = "INFO"
 LOG_FILE = "carbuddy.log"
 
-# === GPIO設定（将来的なロータリーエンコーダー用） ===
-ROTARY_ENCODER_PINS = {
-    "clk": 17,
-    "dt": 18,
-    "sw": 27
-}
+# === GPIO設定（ロータリーエンコーダー） ===
+ROTARY_ENCODER_CLK_PIN = 17  # CLKピン
+ROTARY_ENCODER_DT_PIN = 18   # DTピン
+# 注意: 3ピンエンコーダーのためSWピンは使用せず
 
 # === デバッグ設定 ===
 DEBUG_MODE = False
-MOCK_SENSORS = True  # センサーなしでテスト実行
+MOCK_SENSORS = False  # Trueでセンサーなしでテスト実行

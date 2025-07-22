@@ -55,10 +55,21 @@ class TemperatureSensor:
             return self._get_mock_temperature()
         
         try:
-            temperature = self.sensor.get_temperature()
-            self.last_temperature = temperature
-            return temperature
-            
+            # DS18B20センサーの準備待機（複数回試行）
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    temperature = self.sensor.get_temperature()
+                    self.last_temperature = temperature
+                    return temperature
+                except Exception as retry_e:
+                    if "not yet ready" in str(retry_e).lower() and attempt < max_retries - 1:
+                        logger.debug(f"Sensor not ready, waiting... (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(0.1)  # 100ms待機
+                        continue
+                    else:
+                        raise retry_e
+                        
         except Exception as e:
             logger.error(f"Failed to read temperature: {e}")
             # エラー時は前回値を返す
@@ -86,6 +97,24 @@ class TemperatureSensor:
         if self.mock_mode:
             return True
         return self.sensor is not None
+    
+    def is_ready(self) -> bool:
+        """センサーが読み取り準備完了かチェック"""
+        if self.mock_mode:
+            return True
+        
+        if not self.sensor:
+            return False
+            
+        try:
+            # 実際に温度を読み取って準備状態を確認
+            _ = self.sensor.get_temperature()
+            return True
+        except Exception as e:
+            if "not yet ready" in str(e).lower():
+                return False
+            # その他のエラーの場合も準備未完了とみなす
+            return False
     
     def get_sensor_info(self) -> dict:
         """センサー情報を取得"""
